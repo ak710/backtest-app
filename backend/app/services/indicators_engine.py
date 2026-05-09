@@ -170,5 +170,92 @@ def _dispatch(df: pd.DataFrame, name: str, params: dict) -> pd.Series | pd.DataF
         length = int(params.get("length", 20))
         return ta.volume.ChaikinMoneyFlowIndicator(high, low, close, volume, window=length, fillna=False).chaikin_money_flow()
 
+    elif name == "psar":
+        step = float(params.get("step", 0.02))
+        max_step = float(params.get("max_step", 0.2))
+        psar_series = ta.trend.PSARIndicator(high, low, close, step=step, max_step=max_step, fillna=False).psar()
+        return pd.DataFrame({"fast": close, "slow": psar_series})
+
+    elif name == "vortex":
+        length = int(params.get("length", 14))
+        ind = ta.trend.VortexIndicator(high, low, close, window=length, fillna=False)
+        return pd.DataFrame({"fast": ind.vortex_indicator_pos(), "slow": ind.vortex_indicator_neg()})
+
+    elif name == "trix":
+        length = int(params.get("length", 15))
+        signal = int(params.get("signal", 9))
+        trix_series = ta.trend.TRIXIndicator(close, window=length, fillna=False).trix()
+        signal_series = ta.trend.EMAIndicator(trix_series, window=signal, fillna=False).ema_indicator()
+        return pd.DataFrame({"macd": trix_series, "signal": signal_series, "hist": trix_series - signal_series})
+
+    elif name == "kst":
+        ind = ta.trend.KSTIndicator(close, fillna=False)
+        return pd.DataFrame({"macd": ind.kst(), "signal": ind.kst_sig(), "hist": ind.kst() - ind.kst_sig()})
+
+    elif name == "dpo":
+        length = int(params.get("length", 20))
+        return ta.trend.DPOIndicator(close, window=length, fillna=False).dpo()
+
+    elif name == "tsi":
+        slow = int(params.get("slow", 25))
+        fast = int(params.get("fast", 13))
+        signal = int(params.get("signal", 12))
+        tsi_series = ta.momentum.TSIIndicator(close, window_slow=slow, window_fast=fast, fillna=False).tsi()
+        signal_series = ta.trend.EMAIndicator(tsi_series, window=signal, fillna=False).ema_indicator()
+        return pd.DataFrame({"macd": tsi_series, "signal": signal_series, "hist": tsi_series - signal_series})
+
+    elif name == "uo":
+        return ta.momentum.UltimateOscillator(high, low, close, fillna=False).ultimate_oscillator()
+
+    elif name == "stochrsi":
+        length = int(params.get("length", 14))
+        smooth1 = int(params.get("smooth1", 3))
+        smooth2 = int(params.get("smooth2", 3))
+        ind = ta.momentum.StochRSIIndicator(close, window=length, smooth1=smooth1, smooth2=smooth2, fillna=False)
+        return pd.DataFrame({"k": ind.stochrsi_k() * 100, "d": ind.stochrsi_d() * 100})
+
+    elif name == "ao":
+        sma_length = int(params.get("sma_length", 5))
+        ao_series = ta.momentum.AwesomeOscillatorIndicator(high, low, fillna=False).awesome_oscillator()
+        ao_sma = ta.trend.SMAIndicator(ao_series, window=sma_length, fillna=False).sma_indicator()
+        return pd.DataFrame({"obv": ao_series, "obv_sma": ao_sma})
+
+    elif name == "kama":
+        length = int(params.get("length", 10))
+        slow_length = int(params.get("slow_length", 30))
+        kama_series = ta.momentum.KAMAIndicator(close, window=length, fillna=False).kama()
+        slow_ema = ta.trend.EMAIndicator(close, window=slow_length, fillna=False).ema_indicator()
+        return pd.DataFrame({"fast": kama_series, "slow": slow_ema})
+
+    elif name == "kc":
+        length = int(params.get("length", 20))
+        atr_length = int(params.get("atr_length", 10))
+        ind = ta.volatility.KeltnerChannel(high, low, close, window=length, window_atr=atr_length, fillna=False)
+        return pd.DataFrame({
+            "lower": ind.keltner_channel_lband(),
+            "mid": ind.keltner_channel_mband(),
+            "upper": ind.keltner_channel_hband(),
+        })
+
+    elif name == "eom":
+        length = int(params.get("length", 14))
+        sma_length = int(params.get("sma_length", 14))
+        eom_series = ta.volume.EaseOfMovementIndicator(high, low, volume, window=length, fillna=False).ease_of_movement()
+        eom_sma = ta.trend.SMAIndicator(eom_series, window=sma_length, fillna=False).sma_indicator()
+        return pd.DataFrame({"obv": eom_series, "obv_sma": eom_sma})
+
+    elif name == "fi":
+        length = int(params.get("length", 13))
+        sma_length = int(params.get("sma_length", 13))
+        fi_series = ta.volume.ForceIndexIndicator(close, volume, window=length, fillna=False).force_index()
+        fi_sma = ta.trend.SMAIndicator(fi_series, window=sma_length, fillna=False).sma_indicator()
+        return pd.DataFrame({"obv": fi_series, "obv_sma": fi_sma})
+
+    elif name == "vpt":
+        sma_length = int(params.get("sma_length", 20))
+        vpt_series = ta.volume.VolumePriceTrendIndicator(close, volume, fillna=False).volume_price_trend()
+        vpt_sma = ta.trend.SMAIndicator(vpt_series, window=sma_length, fillna=False).sma_indicator()
+        return pd.DataFrame({"obv": vpt_series, "obv_sma": vpt_sma})
+
     else:
         raise ValueError(f"Unknown indicator: {name}")
