@@ -12,7 +12,7 @@ export default function UploadPage({ onResult }: Props) {
   const [symbol, setSymbol] = useState("");
   const [timeframe, setTimeframe] = useState<"weekly" | "monthly">("monthly");
   const [rfr, setRfr] = useState("0.03");
-  const [model, setModel] = useState("anthropic/claude-3.5-sonnet");
+  const [model, setModel] = useState("nvidia/nemotron-3-super-120b-a12b:free");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
