@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: backtesting-bot
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    envVars:
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: OPENROUTER_MODEL
+        value: anthropic/claude-3.5-sonnet
+      - key: APP_ENV
+        value: prod
