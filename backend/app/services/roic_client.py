@@ -12,7 +12,7 @@ BASE_URL = "https://api.roic.ai/v2"
 
 def _get(client: httpx.Client, path: str, api_key: str, params: dict | None = None) -> dict | list | None:
     url = f"{BASE_URL}/{path}"
-    p = {"apikey": api_key, "period": "annual", "limit": 4, **(params or {})}
+    p = {"apikey": api_key, **(params or {})}
     try:
         resp = client.get(url, params=p, timeout=10.0)
         resp.raise_for_status()
@@ -46,9 +46,11 @@ def fetch_fundamental_context(ticker: str, api_key: str) -> dict | None:
         return None
 
     with httpx.Client() as client:
+        fin_params = {"period": "annual", "limit": 4}
         profile_data = _get(client, f"company/profile/{ticker}", api_key)
-        profitability = _get(client, f"fundamental/ratios/profitability/{ticker}", api_key)
-        income = _get(client, f"fundamental/income-statement/{ticker}", api_key)
+        profitability = _get(client, f"fundamental/ratios/profitability/{ticker}", api_key, fin_params)
+        income = _get(client, f"fundamental/income-statement/{ticker}", api_key, fin_params)
+        search_data = _get(client, "tickers/search", api_key, {"query": ticker})
 
     if not any([profile_data, profitability, income]):
         logger.warning("All Roic.ai requests failed for %s", ticker)
@@ -56,12 +58,14 @@ def fetch_fundamental_context(ticker: str, api_key: str) -> dict | None:
 
     context: dict = {"ticker": ticker}
 
+    # Company name from ticker search
+    if isinstance(search_data, list):
+        match = next((t for t in search_data if t.get("symbol") == ticker.upper()), None)
+        if match:
+            context["company_name"] = match.get("name", "")
+
     # Company profile
     if profile_data and isinstance(profile_data, dict):
-        for name_field in ("company_name", "companyName", "name", "company"):
-            if profile_data.get(name_field):
-                context["company_name"] = profile_data[name_field]
-                break
         context["sector"] = profile_data.get("sector", "Unknown")
         context["industry"] = profile_data.get("industry", "Unknown")
         mktcap = profile_data.get("market_cap")
