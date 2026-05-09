@@ -81,7 +81,7 @@ def load_and_prepare_timeseries(
     # Parse time column
     if "time" not in df.columns:
         raise ValueError("No time/date column found in CSV.")
-    df["time"] = pd.to_datetime(df["time"], infer_datetime_format=True)
+    df["time"] = pd.to_datetime(df["time"])
     df = df.set_index("time").sort_index()
 
     # Drop duplicates
