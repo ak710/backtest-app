@@ -202,7 +202,7 @@ Additional notes: {req.notes or "None"}
 Instructions:
 1. Rank strategies by ROBUSTNESS (not just Sharpe). Consider drawdown, num_trades, win_rate.
 2. Explain which indicators worked best and the likely reason.
-3. Suggest specific parameter changes to improve Sharpe and reduce max_drawdown.
+3. Suggest AT LEAST 3 specific parameter modifications (more is better). Each modification must change meaningful parameters — not trivial tweaks. Include at least one that targets drawdown reduction and one that targets Sharpe improvement.
 4. Include warnings about data limitations.
 
 Respond with ONLY this JSON:

@@ -1,22 +1,16 @@
-import { AnalysisResponse } from "../types";
+import { useState } from "react";
+import { AnalysisResponse, PlotlyChart } from "../types";
 import StrategyTable from "../components/StrategyTable";
 import LLMInsights from "../components/LLMInsights";
-import PlotlyChart from "../components/PlotlyChart";
+import PlotlyChartComponent from "../components/PlotlyChart";
+import ChartModal from "../components/ChartModal";
 
 interface Props {
   result: AnalysisResponse;
   onReset: () => void;
 }
 
-function MetricCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub?: string;
-}) {
+function MetricCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-xl p-4">
       <p className="text-xs text-gray-500 uppercase tracking-wide">{label}</p>
@@ -27,13 +21,22 @@ function MetricCard({
 }
 
 export default function ResultsPage({ result, onReset }: Props) {
-  const valid = result.base_strategies.filter((s) => !s.skipped);
-  const best = valid.sort((a, b) => b.metrics.sharpe - a.metrics.sharpe)[0];
+  const [activeChart, setActiveChart] = useState<PlotlyChart | null>(null);
 
+  const valid = result.base_strategies.filter((s) => !s.skipped);
+  const best = [...valid].sort((a, b) => b.metrics.sharpe - a.metrics.sharpe)[0];
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
+
+  const isValidChart = (c: PlotlyChart | Record<string, never>): c is PlotlyChart =>
+    "figure" in c && !!c.figure;
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8 space-y-10">
+      {/* Modal */}
+      {activeChart && (
+        <ChartModal chart={activeChart} onClose={() => setActiveChart(null)} />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -41,7 +44,8 @@ export default function ResultsPage({ result, onReset }: Props) {
             {result.stock_symbol} – {result.timeframe} analysis
           </h1>
           <p className="text-gray-400 text-sm mt-1">
-            {valid.length} strategies tested · {result.modified_strategies.filter((s) => !s.skipped).length} modifications
+            {valid.length} strategies tested ·{" "}
+            {result.modified_strategies.filter((s) => !s.skipped).length} modifications
             {result.model_used && (
               <span className="ml-2 font-mono text-xs bg-gray-800 text-blue-400 px-2 py-0.5 rounded">
                 {result.model_used}
@@ -65,21 +69,9 @@ export default function ResultsPage({ result, onReset }: Props) {
             value={best.metrics.sharpe.toFixed(2)}
             sub={`${best.indicator_name.toUpperCase()} / ${best.strategy_template}`}
           />
-          <MetricCard
-            label="Best Total Return"
-            value={pct(best.metrics.total_return)}
-            sub="Best strategy"
-          />
-          <MetricCard
-            label="Best CAGR"
-            value={pct(best.metrics.cagr)}
-            sub="Annualized"
-          />
-          <MetricCard
-            label="Max Drawdown"
-            value={pct(Math.abs(best.metrics.max_drawdown))}
-            sub="Best strategy"
-          />
+          <MetricCard label="Best Total Return" value={pct(best.metrics.total_return)} sub="Best strategy" />
+          <MetricCard label="Best CAGR" value={pct(best.metrics.cagr)} sub="Annualized" />
+          <MetricCard label="Max Drawdown" value={pct(Math.abs(best.metrics.max_drawdown))} sub="Best strategy" />
         </div>
       )}
 
@@ -91,26 +83,31 @@ export default function ResultsPage({ result, onReset }: Props) {
         warnings={result.llm_warnings}
       />
 
-      {/* Strategy Tables */}
+      {/* Base Strategy Table */}
       <StrategyTable
         strategies={result.base_strategies}
         title="Base Strategy Results"
+        charts={result.strategy_charts}
+        onViewGraph={setActiveChart}
       />
 
+      {/* Modified Strategies Table */}
       {result.modified_strategies.length > 0 && (
         <StrategyTable
           strategies={result.modified_strategies}
           title="LLM-Suggested Modifications"
+          charts={result.modified_strategy_charts}
+          onViewGraph={setActiveChart}
         />
       )}
 
-      {/* Charts */}
-      {result.charts.length > 0 && (
+      {/* Summary charts (equity curve + performance comparison) */}
+      {result.charts.filter(isValidChart).length > 0 && (
         <div>
           <h2 className="text-lg font-semibold text-white mb-4">Charts</h2>
           <div className="space-y-6">
-            {result.charts.map((chart) => (
-              <PlotlyChart key={chart.id} chart={chart} />
+            {result.charts.filter(isValidChart).map((chart) => (
+              <PlotlyChartComponent key={chart.id} chart={chart} />
             ))}
           </div>
         </div>

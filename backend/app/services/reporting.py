@@ -188,31 +188,36 @@ def generate_report(
     """Assemble the full report dict returned to the frontend."""
     all_results = base_results + modified_results
 
-    charts = []
-
-    # Equity comparison (all strategies)
+    # ── Summary charts (always shown) ──────────────────────────────────────
+    summary_charts = []
     eq_chart = generate_equity_comparison_chart(all_results, initial_capital)
     if eq_chart:
-        charts.append({"id": "equity_comparison", "title": "Equity Curves – All Strategies", "figure": eq_chart})
+        summary_charts.append({"id": "equity_comparison", "title": "Equity Curves – All Strategies", "figure": eq_chart})
 
-    # Metrics bar chart
     metrics_chart = generate_metrics_summary_chart(all_results)
     if metrics_chart:
-        charts.append({"id": "metrics_comparison", "title": "Performance Comparison", "figure": metrics_chart})
+        summary_charts.append({"id": "metrics_comparison", "title": "Performance Comparison", "figure": metrics_chart})
 
-    # Individual price+trade charts (top 5 by Sharpe to avoid clutter)
-    valid = sorted(
-        [r for r in base_results if not r.skipped and r.equity_curve],
-        key=lambda r: r.metrics.get("sharpe", -999),
-        reverse=True,
-    )[:5]
-    for result in valid:
-        chart = generate_price_indicator_chart(prepared, result)
-        if chart:
-            charts.append({
-                "id": f"price_{result.indicator_name}_{result.strategy_template}",
+    # ── Per-strategy charts (one per row, in same order as results) ─────────
+    def _make_strategy_charts(results: list[BacktestResult], prefix: str) -> list[dict]:
+        out = []
+        for i, result in enumerate(results):
+            if result.skipped or not result.equity_curve:
+                out.append({})
+                continue
+            chart = generate_price_indicator_chart(prepared, result)
+            out.append({
+                "id": f"{prefix}_{i}_{result.indicator_name}_{result.strategy_template}",
                 "title": f"{result.indicator_name.upper()} – {result.strategy_template}",
                 "figure": chart,
-            })
+            } if chart else {})
+        return out
 
-    return {"charts": charts}
+    strategy_charts = _make_strategy_charts(base_results, "price")
+    modified_strategy_charts = _make_strategy_charts(modified_results, "modified")
+
+    return {
+        "charts": summary_charts,
+        "strategy_charts": strategy_charts,
+        "modified_strategy_charts": modified_strategy_charts,
+    }

@@ -65,4 +65,6 @@ export interface AnalysisResponse {
   llm_suggested_modifications: SuggestedModification[];
   llm_warnings: string[];
   charts: PlotlyChart[];
+  strategy_charts: (PlotlyChart | Record<string, never>)[];
+  modified_strategy_charts: (PlotlyChart | Record<string, never>)[];
 }

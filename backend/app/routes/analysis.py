@@ -75,5 +75,7 @@ async def analyze(
             "llm_suggested_modifications": result.llm_analysis.get("suggested_modifications", []),
             "llm_warnings": result.llm_analysis.get("warnings", []),
             "charts": result.report.get("charts", []),
+            "strategy_charts": result.report.get("strategy_charts", []),
+            "modified_strategy_charts": result.report.get("modified_strategy_charts", []),
         }
     )
