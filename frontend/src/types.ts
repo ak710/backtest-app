@@ -54,6 +54,25 @@ export interface PlotlyChart {
   };
 }
 
+export interface SelectionRationale {
+  indicator_name: string;
+  strategy_template: string;
+  params: Record<string, unknown>;
+  rationale: string;
+}
+
+export interface FundamentalContext {
+  sector?: string;
+  industry?: string;
+  market_cap_bn?: number;
+  roic_avg?: number;
+  gross_margin_avg?: number;
+  net_margin_avg?: number;
+  ebitda_margin_avg?: number;
+  roa_avg?: number;
+  revenue_cagr_3yr?: number;
+}
+
 export interface AnalysisResponse {
   stock_symbol: string;
   timeframe: string;
@@ -67,4 +86,6 @@ export interface AnalysisResponse {
   charts: PlotlyChart[];
   strategy_charts: (PlotlyChart | Record<string, never>)[];
   modified_strategy_charts: (PlotlyChart | Record<string, never>)[];
+  selection_rationales: SelectionRationale[];
+  fundamental_context: FundamentalContext | null;
 }

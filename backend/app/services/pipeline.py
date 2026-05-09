@@ -181,4 +181,14 @@ def run_full_analysis(
         modified_results=modified_results,
         llm_analysis=llm_analysis.model_dump(),
         report=report,
+        selection_rationales=[
+            {
+                "indicator_name": cfg.indicator_name,
+                "strategy_template": cfg.strategy_template,
+                "params": cfg.params,
+                "rationale": cfg.rationale,
+            }
+            for cfg in configs
+        ],
+        fundamental_context=fundamental_context,
     )

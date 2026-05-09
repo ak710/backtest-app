@@ -66,3 +66,5 @@ class FullAnalysisResult(BaseModel):
     modified_results: list[BacktestResult]
     llm_analysis: dict
     report: dict
+    selection_rationales: list[dict] = []
+    fundamental_context: dict | None = None

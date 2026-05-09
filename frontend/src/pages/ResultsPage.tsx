@@ -4,6 +4,7 @@ import StrategyTable from "../components/StrategyTable";
 import LLMInsights from "../components/LLMInsights";
 import PlotlyChartComponent from "../components/PlotlyChart";
 import ChartModal from "../components/ChartModal";
+import SelectionCard from "../components/SelectionCard";
 
 interface Props {
   result: AnalysisResponse;
@@ -74,6 +75,12 @@ export default function ResultsPage({ result, onReset }: Props) {
           <MetricCard label="Max Drawdown" value={pct(Math.abs(best.metrics.max_drawdown))} sub="Best strategy" />
         </div>
       )}
+
+      {/* Selection Rationale */}
+      <SelectionCard
+        rationales={result.selection_rationales ?? []}
+        fundamentals={result.fundamental_context ?? null}
+      />
 
       {/* LLM Insights */}
       <LLMInsights

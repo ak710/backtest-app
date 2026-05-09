@@ -77,5 +77,7 @@ async def analyze(
             "charts": result.report.get("charts", []),
             "strategy_charts": result.report.get("strategy_charts", []),
             "modified_strategy_charts": result.report.get("modified_strategy_charts", []),
+            "selection_rationales": result.selection_rationales,
+            "fundamental_context": result.fundamental_context,
         }
     )
