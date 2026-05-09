@@ -39,9 +39,14 @@ export default function SelectionCard({ rationales, fundamentals }: Props) {
           </h3>
           {fundamentals ? (
             <div>
-              {fundamentals.sector && (
+              {(fundamentals.company_name || fundamentals.sector) && (
                 <div className="mb-3">
-                  <p className="text-white font-medium">{fundamentals.sector}</p>
+                  {fundamentals.company_name && (
+                    <p className="text-white font-semibold">{fundamentals.company_name}</p>
+                  )}
+                  {fundamentals.sector && (
+                    <p className="text-blue-300 text-xs">{fundamentals.sector}</p>
+                  )}
                   {fundamentals.industry && (
                     <p className="text-gray-500 text-xs">{fundamentals.industry}</p>
                   )}

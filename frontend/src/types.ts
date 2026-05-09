@@ -62,6 +62,7 @@ export interface SelectionRationale {
 }
 
 export interface FundamentalContext {
+  company_name?: string;
   sector?: string;
   industry?: string;
   market_cap_bn?: number;

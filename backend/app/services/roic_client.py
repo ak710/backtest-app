@@ -58,6 +58,10 @@ def fetch_fundamental_context(ticker: str, api_key: str) -> dict | None:
 
     # Company profile
     if profile_data and isinstance(profile_data, dict):
+        for name_field in ("company_name", "companyName", "name", "company"):
+            if profile_data.get(name_field):
+                context["company_name"] = profile_data[name_field]
+                break
         context["sector"] = profile_data.get("sector", "Unknown")
         context["industry"] = profile_data.get("industry", "Unknown")
         mktcap = profile_data.get("market_cap")
@@ -65,6 +69,8 @@ def fetch_fundamental_context(ticker: str, api_key: str) -> dict | None:
             context["market_cap_bn"] = round(mktcap / 1e9, 1)
 
     # Profitability ratios (last 3 annual periods)
+    # Roic.ai returns these as whole-number percentages (e.g. 18.68 = 18.68%),
+    # so divide by 100 to normalise to decimal form for consistent frontend display.
     if isinstance(profitability, list) and profitability:
         records = profitability[:3]
         for field, label in [
@@ -76,7 +82,7 @@ def fetch_fundamental_context(ticker: str, api_key: str) -> dict | None:
         ]:
             val = _avg(records, field)
             if val is not None:
-                context[label] = val
+                context[label] = round(val / 100, 4)
 
     # Income statement — revenue growth
     if isinstance(income, list) and income:
