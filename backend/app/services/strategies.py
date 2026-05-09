@@ -68,8 +68,8 @@ def rsi_mean_reversion(df: pd.DataFrame, ind: pd.Series, params: dict) -> pd.Ser
 @register("rsi_trend_follow")
 def rsi_trend_follow(df: pd.DataFrame, ind: pd.Series, params: dict) -> pd.Series:
     slow_length = int(params.get("slow_length", 50))
-    import pandas_ta as ta
-    slow_ma = ta.ema(df["close"], length=slow_length)
+    import ta as ta_lib
+    slow_ma = ta_lib.trend.EMAIndicator(df["close"], window=slow_length, fillna=False).ema_indicator()
 
     signals = pd.Series(0, index=df.index)
     above_mid = ind > 50
@@ -87,14 +87,11 @@ def rsi_trend_follow(df: pd.DataFrame, ind: pd.Series, params: dict) -> pd.Serie
 
 @register("bollinger_mean_reversion")
 def bollinger_mean_reversion(df: pd.DataFrame, ind: pd.DataFrame, params: dict) -> pd.Series:
-    # ind is a DataFrame from bbands; find lower and middle band columns
-    lower_col = next((c for c in ind.columns if c.startswith("BBL")), None)
-    mid_col = next((c for c in ind.columns if c.startswith("BBM")), None)
-    if lower_col is None or mid_col is None:
+    if "lower" not in ind.columns or "mid" not in ind.columns:
         return pd.Series(0, index=df.index)
 
-    lower = ind[lower_col]
-    mid = ind[mid_col]
+    lower = ind["lower"]
+    mid = ind["mid"]
     close = df["close"]
 
     signals = pd.Series(0, index=df.index)
@@ -124,29 +121,9 @@ def ma_crossover(df: pd.DataFrame, ind: pd.DataFrame | pd.Series, params: dict) 
 
 @register("macd_trend")
 def macd_trend(df: pd.DataFrame, ind: pd.DataFrame, params: dict) -> pd.Series:
-    macd_col = next((c for c in ind.columns if c.startswith("MACD_") and "h" not in c.lower() and "s" not in c.lower().replace("macd", "")), None)
-    # More robust column detection
-    macd_line_col = None
-    signal_col = None
-    hist_col = None
-    for c in ind.columns:
-        cl = c.upper()
-        if cl.startswith("MACD_") and "H" not in cl[5:6] and "S" not in cl[5:6]:
-            macd_line_col = c
-        elif "MACDS_" in cl or cl.startswith("MACDS"):
-            signal_col = c
-        elif "MACDH_" in cl or cl.startswith("MACDH"):
-            hist_col = c
-
-    if macd_line_col is None or signal_col is None:
-        # Fallback: first three columns
-        cols = list(ind.columns)
-        if len(cols) >= 2:
-            macd_line_col, signal_col = cols[0], cols[2] if len(cols) > 2 else cols[1]
-        else:
-            return pd.Series(0, index=df.index)
-
-    return _crossover(ind[macd_line_col], ind[signal_col])
+    if "macd" not in ind.columns or "signal" not in ind.columns:
+        return pd.Series(0, index=df.index)
+    return _crossover(ind["macd"], ind["signal"])
 
 
 @register("atr_trailing_stop")
@@ -188,10 +165,7 @@ def stoch_mean_reversion(df: pd.DataFrame, ind: pd.DataFrame, params: dict) -> p
     overbought = float(params.get("overbought", 80))
     oversold = float(params.get("oversold", 20))
 
-    k_col = next((c for c in ind.columns if "STOCHk" in c or c.endswith("_k") or "k" in c.lower()), None)
-    if k_col is None:
-        k_col = ind.columns[0]
-    k = ind[k_col]
+    k = ind["k"] if "k" in ind.columns else ind.iloc[:, 0]
 
     signals = pd.Series(0, index=df.index)
     for i in range(1, len(df)):
@@ -220,16 +194,12 @@ def cci_mean_reversion(df: pd.DataFrame, ind: pd.Series, params: dict) -> pd.Ser
 def adx_breakout(df: pd.DataFrame, ind: pd.DataFrame, params: dict) -> pd.Series:
     strength_threshold = float(params.get("strength_threshold", 25))
 
-    adx_col = next((c for c in ind.columns if c.startswith("ADX_")), None)
-    dmp_col = next((c for c in ind.columns if c.startswith("DMP_")), None)
-    dmn_col = next((c for c in ind.columns if c.startswith("DMN_")), None)
-
-    if adx_col is None:
+    if "adx" not in ind.columns:
         return pd.Series(0, index=df.index)
 
-    adx = ind[adx_col]
-    dmp = ind[dmp_col] if dmp_col else None
-    dmn = ind[dmn_col] if dmn_col else None
+    adx = ind["adx"]
+    dmp = ind["dmp"] if "dmp" in ind.columns else None
+    dmn = ind["dmn"] if "dmn" in ind.columns else None
 
     signals = pd.Series(0, index=df.index)
     for i in range(1, len(df)):
