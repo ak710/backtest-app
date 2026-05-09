@@ -12,6 +12,7 @@ from app.services.indicators_engine import compute_indicator
 from app.services.llm_client import LLMClient
 from app.services.metrics import compute_metrics, to_strategy_summary
 from app.services.reporting import generate_report
+from app.services.roic_client import fetch_fundamental_context
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -74,6 +75,14 @@ def run_full_analysis(
     resolved_model = model or settings.openrouter_model
     logger.info("Using model: %s", resolved_model)
     llm_client = LLMClient(api_key=settings.openrouter_api_key, model=resolved_model)
+
+    logger.info("Fetching fundamental context from Roic.ai for %s...", stock_symbol)
+    fundamental_context = fetch_fundamental_context(stock_symbol, settings.roic_api_key)
+    if fundamental_context:
+        logger.info("Fundamental context fetched successfully")
+    else:
+        logger.info("No fundamental context (ROIC_API_KEY not set or request failed) — proceeding without it")
+
     selection_request = LLMIndicatorSelectionRequest(
         stock_symbol=stock_symbol,
         timeframe=timeframe,
@@ -82,6 +91,7 @@ def run_full_analysis(
         num_bars=prepared.num_bars,
         basic_stats=prepared.basic_stats,
         indicator_catalog=registry.to_summaries(),
+        fundamental_context=fundamental_context,
     )
 
     logger.info("Calling LLM #1 to select indicators...")

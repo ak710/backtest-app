@@ -18,6 +18,7 @@ class LLMIndicatorSelectionRequest(BaseModel):
     num_bars: int
     basic_stats: dict
     indicator_catalog: list[IndicatorMetaSummary]
+    fundamental_context: dict | None = None
     objective: str = (
         "Select 10-15 promising indicator configurations for backtesting. "
         "Focus on robust, low-drawdown strategies with good Sharpe ratio potential."

@@ -63,13 +63,36 @@ class LLMClient:
         catalog_json = json.dumps(
             [s.model_dump() for s in req.indicator_catalog], indent=2
         )
+        fundamental_block = ""
+        if req.fundamental_context:
+            fc = req.fundamental_context
+            lines = []
+            if "sector" in fc:
+                lines.append(f"  Sector / Industry: {fc.get('sector')} / {fc.get('industry', 'N/A')}")
+            if "market_cap_bn" in fc:
+                lines.append(f"  Market Cap: ${fc['market_cap_bn']}B")
+            if "roic_avg" in fc:
+                lines.append(f"  ROIC (3yr avg): {fc['roic_avg']:.1%}")
+            if "revenue_cagr_3yr" in fc:
+                lines.append(f"  Revenue CAGR (3yr): {fc['revenue_cagr_3yr']:.1%}")
+            if "gross_margin_avg" in fc:
+                lines.append(f"  Gross Margin (avg): {fc['gross_margin_avg']:.1%}")
+            if "net_margin_avg" in fc:
+                lines.append(f"  Net Margin (avg): {fc['net_margin_avg']:.1%}")
+            if "ebitda_margin_avg" in fc:
+                lines.append(f"  EBITDA Margin (avg): {fc['ebitda_margin_avg']:.1%}")
+            if "roa_avg" in fc:
+                lines.append(f"  ROA (avg): {fc['roa_avg']:.1%}")
+            if lines:
+                fundamental_block = "\nFundamental context (Roic.ai):\n" + "\n".join(lines) + "\n"
+
         user_prompt = f"""Stock: {req.stock_symbol}
 Timeframe: {req.timeframe} bars
 Period: {req.sample_start} to {req.sample_end} ({req.num_bars} bars)
 
-Basic statistics:
+Basic price statistics:
 {json.dumps(req.basic_stats, indent=2)}
-
+{fundamental_block}
 Objective: {req.objective}
 
 Available indicators:
@@ -79,7 +102,8 @@ Instructions:
 - Select exactly 10-15 indicator configurations.
 - For each, pick parameters within the specified param_ranges.
 - Assign a strategy_template from the indicator's compatible_strategies list.
-- Provide a brief rationale.
+- Provide a brief rationale that references the fundamental context where relevant.
+- Use the fundamental context to bias your choices: high ROIC + strong revenue growth → favour trend/momentum indicators; low margins + cyclical profile → favour mean-reversion and volatility indicators.
 - Ensure diversity: include trend, momentum, volatility, and volume indicators.
 - For indicators with fast/slow lengths, ensure fast < slow.
 
