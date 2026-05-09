@@ -53,8 +53,21 @@ class LLMClient:
             ],
         }
         resp = self.client.post(OPENROUTER_URL, headers=headers, json=payload)
-        resp.raise_for_status()
         data = resp.json()
+
+        # Surface API-level errors before touching response fields
+        if "error" in data:
+            err = data["error"]
+            msg = err.get("message", str(err)) if isinstance(err, dict) else str(err)
+            raise ValueError(f"OpenRouter error ({resp.status_code}): {msg}")
+
+        if resp.status_code != 200:
+            raise ValueError(f"OpenRouter HTTP {resp.status_code}: {resp.text[:300]}")
+
+        if "choices" not in data or not data["choices"]:
+            logger.error("Unexpected OpenRouter response: %s", data)
+            raise ValueError(f"OpenRouter returned no choices. Full response: {json.dumps(data)[:500]}")
+
         return data["choices"][0]["message"]["content"]
 
     def select_indicators(
