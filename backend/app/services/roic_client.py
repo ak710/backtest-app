@@ -48,7 +48,7 @@ def fetch_historical_prices(ticker: str, api_key: str, limit: int = 1300) -> pd.
     if not api_key:
         return None
     with httpx.Client() as client:
-        data = _get(client, f"stock-prices/historical/{ticker.upper()}", api_key, {"limit": limit})
+        data = _get(client, f"stock-prices/{ticker.upper()}", api_key, {"limit": limit, "order": "DESC"})
     if not data or not isinstance(data, list):
         logger.warning("No historical price data returned for %s", ticker)
         return None
@@ -75,7 +75,7 @@ def fetch_latest_price(ticker: str, api_key: str) -> dict | None:
     if not api_key:
         return None
     with httpx.Client() as client:
-        data = _get(client, f"stock-prices/latest/{ticker.upper()}", api_key)
+        data = _get(client, f"stock-prices/{ticker.upper()}", api_key, {"limit": 1, "order": "DESC"})
     if not data:
         return None
     if isinstance(data, list) and data:
