@@ -58,12 +58,15 @@ def run_strategy(
     equity_curve: list[EquityPoint] = []
     trades: list[Trade] = []
     period_returns: list[float] = []
+    in_market_returns: list[float] = []
     prev_equity = initial_capital
 
     for i in range(len(df)):
         date_str = str(df.index[i].date() if hasattr(df.index[i], "date") else df.index[i])
         price = float(close.iloc[i])
         sig = int(signals.iloc[i]) if i < len(signals) else 0
+
+        was_in_position = in_position
 
         # Enter long
         if not in_position and sig == 1 and not np.isnan(price):
@@ -103,7 +106,11 @@ def run_strategy(
         equity_curve.append(EquityPoint(date=date_str, equity=round(current_equity, 4)))
 
         if i > 0 and prev_equity > 0:
-            period_returns.append((current_equity - prev_equity) / prev_equity)
+            r = (current_equity - prev_equity) / prev_equity
+            period_returns.append(r)
+            # Track returns only for bars where we held or just entered/exited a position
+            if was_in_position or in_position:
+                in_market_returns.append(r)
         prev_equity = current_equity
 
     # Close any open position at last bar price
@@ -132,6 +139,7 @@ def run_strategy(
         trades=trades,
         equity_curve=equity_curve,
         period_returns=period_returns,
+        in_market_returns=in_market_returns,
     )
 
 
@@ -159,6 +167,8 @@ def run_benchmark(data: PreparedData, risk_settings: RiskSettings) -> BacktestRe
         if i > 0 and prev_equity > 0:
             period_returns.append((current_equity - prev_equity) / prev_equity)
         prev_equity = current_equity
+    # B&H is always fully invested, so in_market_returns == period_returns
+    in_market_returns = list(period_returns)
 
     last_price = float(close.iloc[-1])
     sell_price = last_price * (1 - slippage_rate)
@@ -180,4 +190,5 @@ def run_benchmark(data: PreparedData, risk_settings: RiskSettings) -> BacktestRe
         )],
         equity_curve=equity_curve,
         period_returns=period_returns,
+        in_market_returns=in_market_returns,
     )

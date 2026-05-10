@@ -55,6 +55,7 @@ class BacktestResult(BaseModel):
     trades: list[Trade]
     equity_curve: list[EquityPoint]
     period_returns: list[float]
+    in_market_returns: list[float] = []
     metrics: dict = {}
     skipped: bool = False
     skip_reason: str = ""

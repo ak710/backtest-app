@@ -13,12 +13,13 @@ const num = (v: number, d = 3) => v.toFixed(d);
 
 const TOOLTIPS: Record<string, string> = {
   "Total Return": "Net % gain from start to end, including all trades.",
-  CAGR: "Compound Annual Growth Rate — annualised total return.",
-  Sharpe: "Risk-adjusted return: excess return ÷ volatility. >1 is good, >2 is excellent.",
+  CAGR: "Compound Annual Growth Rate annualised over time actually in market — excludes idle cash periods.",
+  Sharpe: "Risk-adjusted return using only in-market bar returns. >1 is good, >2 is excellent.",
   "Max DD": "Worst peak-to-trough decline. Lower is better (e.g. <20% is healthy).",
-  Volatility: "Annualised standard deviation of bar returns.",
+  Volatility: "Annualised standard deviation of in-market bar returns.",
   Trades: "Number of completed round-trip trades.",
   "Win Rate": "% of trades that closed with a profit.",
+  "Time in Mkt": "Fraction of the full data period actually invested. Low % means CAGR reflects concentrated holding windows.",
 };
 
 function MetricCell({ value, good }: { value: string; good: boolean | null }) {
@@ -53,6 +54,7 @@ function BenchmarkRow({ bh, hasCharts }: { bh: StrategyResult; hasCharts: boolea
       <MetricCell value={pct(m.volatility)} good={null} />
       <td className="px-3 py-2 text-right text-yellow-600 text-sm">1</td>
       <MetricCell value={pct(m.win_rate)} good={m.win_rate > 0.5} />
+      <td className="px-3 py-2 text-right text-yellow-600 text-sm">100%</td>
       {hasCharts && <td className="px-3 py-2" />}
     </tr>
   );
@@ -72,7 +74,7 @@ export default function StrategyTable({ strategies, title, charts = [], onViewGr
   const hasCharts = charts.some((c) => c && "figure" in c);
 
   const handleExportCSV = () => {
-    const headers = ["Indicator", "Strategy", "Total Return %", "CAGR %", "Sharpe", "Max DD %", "Volatility %", "Trades", "Win Rate %"];
+    const headers = ["Indicator", "Strategy", "Total Return %", "CAGR % (in-mkt)", "Sharpe (in-mkt)", "Max DD %", "Volatility % (in-mkt)", "Trades", "Win Rate %", "Time in Market %"];
 
     const strategyRows = sorted.map(({ s }) => {
       const m = s.metrics;
@@ -86,6 +88,7 @@ export default function StrategyTable({ strategies, title, charts = [], onViewGr
         (m.volatility * 100).toFixed(2),
         m.num_trades,
         (m.win_rate * 100).toFixed(2),
+        ((m.time_in_market_pct ?? 1) * 100).toFixed(1),
       ];
     });
 
@@ -100,6 +103,7 @@ export default function StrategyTable({ strategies, title, charts = [], onViewGr
           (benchmark.metrics.volatility * 100).toFixed(2),
           1,
           (benchmark.metrics.win_rate * 100).toFixed(2),
+          "100.0",
         ]]
       : [];
 
@@ -140,6 +144,7 @@ export default function StrategyTable({ strategies, title, charts = [], onViewGr
               <TH label="Volatility" />
               <TH label="Trades" />
               <TH label="Win Rate" />
+              <TH label="Time in Mkt" />
               {hasCharts && <th className="px-3 py-3 text-center text-xs uppercase tracking-wide">Chart</th>}
             </tr>
           </thead>
@@ -164,6 +169,9 @@ export default function StrategyTable({ strategies, title, charts = [], onViewGr
                   <MetricCell value={pct(m.volatility)} good={null} />
                   <td className="px-3 py-2 text-right text-gray-300">{m.num_trades}</td>
                   <MetricCell value={pct(m.win_rate)} good={m.win_rate > 0.5} />
+                  <td className="px-3 py-2 text-right text-gray-400 text-sm">
+                    {m.time_in_market_pct != null ? pct(m.time_in_market_pct) : "—"}
+                  </td>
                   {hasCharts && (
                     <td className="px-3 py-2 text-center">
                       {hasChart ? (

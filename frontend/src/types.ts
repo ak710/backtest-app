@@ -32,6 +32,7 @@ export interface Metrics {
   win_rate: number;
   avg_trade_pnl: number;
   profit_factor: number;
+  time_in_market_pct: number | null;
 }
 
 export interface StrategyResult {

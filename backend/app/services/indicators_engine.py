@@ -104,6 +104,12 @@ def _dispatch(df: pd.DataFrame, name: str, params: dict) -> pd.Series | pd.DataF
         length = int(params.get("length", 12))
         return ta.momentum.ROCIndicator(close, window=length, fillna=False).roc()
 
+    elif name == "roc2":
+        roc_length = int(params.get("roc_length", 12))
+        deriv_length = int(params.get("deriv_length", 3))
+        roc_series = ta.momentum.ROCIndicator(close, window=roc_length, fillna=False).roc()
+        return roc_series.diff(deriv_length)
+
     elif name == "cci":
         length = int(params.get("length", 20))
         return ta.trend.CCIIndicator(high, low, close, window=length, fillna=False).cci()

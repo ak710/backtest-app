@@ -77,16 +77,23 @@ def compute_metrics(
             "win_rate": 0.0,
             "avg_trade_pnl": 0.0,
             "profit_factor": 0.0,
+            "time_in_market_pct": 0.0,
         }
 
-    returns = pd.Series(result.period_returns)
+    all_returns = pd.Series(result.period_returns)
+    in_market = pd.Series(result.in_market_returns) if result.in_market_returns else all_returns
     equity_values = [ep.equity for ep in result.equity_curve]
     final_equity = equity_values[-1] if equity_values else initial_capital
 
     total_return = (final_equity - initial_capital) / initial_capital
-    cagr = compute_cagr(initial_capital, final_equity, len(result.equity_curve), frequency)
-    sharpe = compute_sharpe_ratio(returns, risk_free_rate_annual, frequency)
-    volatility = float(returns.std() * ((52 if frequency == "weekly" else 12) ** 0.5))
+    # CAGR annualized over time actually in market, not total elapsed time
+    in_market_bars = len(result.in_market_returns) if result.in_market_returns else len(result.equity_curve)
+    cagr = compute_cagr(initial_capital, final_equity, in_market_bars, frequency)
+    sharpe = compute_sharpe_ratio(in_market, risk_free_rate_annual, frequency)
+    volatility = float(in_market.std() * ((52 if frequency == "weekly" else 12) ** 0.5))
+
+    total_bars = len(result.equity_curve)
+    time_in_market_pct = round(in_market_bars / total_bars, 4) if total_bars > 0 else 0.0
     max_dd, dd_duration = compute_max_drawdown(equity_values)
 
     trades = result.trades
@@ -116,6 +123,7 @@ def compute_metrics(
         "win_rate": round(win_rate, 4),
         "avg_trade_pnl": round(avg_trade_pnl, 4),
         "profit_factor": round(profit_factor, 4) if profit_factor != float("inf") else 999.0,
+        "time_in_market_pct": time_in_market_pct,
     }
 
 

@@ -218,6 +218,14 @@ def adx_breakout(df: pd.DataFrame, ind: pd.DataFrame, params: dict) -> pd.Series
     return signals
 
 
+@register("zero_cross")
+def zero_cross(df: pd.DataFrame, ind: pd.Series, params: dict) -> pd.Series:
+    """Buy when series crosses above zero; sell when it crosses below zero."""
+    if isinstance(ind, pd.DataFrame):
+        ind = ind.iloc[:, 0]
+    return _crossover(ind, pd.Series(0.0, index=ind.index))
+
+
 @register("obv_momentum")
 def obv_momentum(df: pd.DataFrame, ind: pd.DataFrame, params: dict) -> pd.Series:
     if isinstance(ind, pd.Series):
