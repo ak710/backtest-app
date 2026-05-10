@@ -343,7 +343,7 @@ def _call_llm(api_key: str, model: str, prompt: str) -> dict:
             {"role": "user", "content": prompt},
         ],
     }
-    with httpx.Client(timeout=120.0) as client:
+    with httpx.Client(timeout=600.0) as client:
         resp = client.post(OPENROUTER_URL, headers=headers, json=payload)
     data = resp.json()
 

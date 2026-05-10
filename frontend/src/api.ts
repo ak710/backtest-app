@@ -31,6 +31,6 @@ export async function predictReversal(
     ticker,
     peer_tickers: peerTickers && peerTickers.length > 0 ? peerTickers : undefined,
     model: model || undefined,
-  });
+  }, { timeout: 900_000 }); // 15 min — thinking models can be slow
   return res.data;
 }
