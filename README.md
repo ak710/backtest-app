@@ -1,3 +1,13 @@
+---
+title: LLM Backtesting Bot
+emoji: 📈
+colorFrom: blue
+colorTo: indigo
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # LLM Backtesting Bot
 
 A single-stock, LLM-assisted backtesting webapp. Upload weekly or monthly OHLCV data and an LLM will select technical indicator configurations, run backtests, and propose improvements.

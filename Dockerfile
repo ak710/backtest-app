@@ -25,6 +25,6 @@ ENV APP_ENV=prod \
     PYTHONUNBUFFERED=1
 
 WORKDIR /app/backend
-EXPOSE 8080
+EXPOSE 7860
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "7860"]
