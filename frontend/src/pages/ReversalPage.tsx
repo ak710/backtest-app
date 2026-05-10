@@ -324,10 +324,10 @@ export default function ReversalPage() {
                   )}
                 </div>
                 <div className="text-right">
-                  <p className="text-xl font-semibold text-white">${result.current_price.toFixed(2)}</p>
+                  <p className="text-xl font-semibold text-white">${Number(result.current_price).toFixed(2)}</p>
                   {result.change_percent != null && (
-                    <p className={`text-sm ${result.change_percent >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                      {result.change_percent >= 0 ? "+" : ""}{result.change_percent.toFixed(2)}% today
+                    <p className={`text-sm ${Number(result.change_percent) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                      {Number(result.change_percent) >= 0 ? "+" : ""}{Number(result.change_percent).toFixed(2)}% today
                     </p>
                   )}
                   <p className="text-xs text-gray-600">as of {result.as_of}</p>
