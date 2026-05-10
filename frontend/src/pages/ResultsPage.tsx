@@ -9,6 +9,7 @@ import SelectionCard from "../components/SelectionCard";
 interface Props {
   result: AnalysisResponse;
   onReset: () => void;
+  onHistory: () => void;
 }
 
 function MetricCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -21,7 +22,7 @@ function MetricCard({ label, value, sub }: { label: string; value: string; sub?:
   );
 }
 
-export default function ResultsPage({ result, onReset }: Props) {
+export default function ResultsPage({ result, onReset, onHistory }: Props) {
   const [activeChart, setActiveChart] = useState<PlotlyChart | null>(null);
 
   const valid = result.base_strategies.filter((s) => !s.skipped);
@@ -55,12 +56,20 @@ export default function ResultsPage({ result, onReset }: Props) {
             )}
           </p>
         </div>
-        <button
-          onClick={onReset}
-          className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-lg px-4 py-2 transition-colors"
-        >
-          ← New Analysis
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={onHistory}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-400 text-sm font-medium rounded-lg px-4 py-2 transition-colors"
+          >
+            🕐 History
+          </button>
+          <button
+            onClick={onReset}
+            className="bg-gray-800 hover:bg-gray-700 text-gray-300 text-sm font-medium rounded-lg px-4 py-2 transition-colors"
+          >
+            ← New Analysis
+          </button>
+        </div>
       </div>
 
       {/* Data quality warnings */}

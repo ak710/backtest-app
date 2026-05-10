@@ -264,6 +264,11 @@ def run_full_analysis(
         walk_forward_split_date=walk_forward_split_date,
     )
 
+    price_series = {
+        str(d.date() if hasattr(d, "date") else d): float(v)
+        for d, v in zip(prepared.df.index, prepared.df["close"])
+    }
+
     return FullAnalysisResult(
         stock_symbol=stock_symbol,
         timeframe=timeframe,
@@ -286,4 +291,5 @@ def run_full_analysis(
         oos_results=oos_results,
         walk_forward_enabled=walk_forward,
         walk_forward_split_date=walk_forward_split_date,
+        price_series=price_series,
     )

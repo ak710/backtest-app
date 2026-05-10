@@ -5,9 +5,10 @@ import { AnalysisResponse } from "../types";
 
 interface Props {
   onResult: (r: AnalysisResponse) => void;
+  onHistory: () => void;
 }
 
-export default function UploadPage({ onResult }: Props) {
+export default function UploadPage({ onResult, onHistory }: Props) {
   const [file, setFile] = useState<File | null>(null);
   const [symbol, setSymbol] = useState("");
   const [timeframe, setTimeframe] = useState<"weekly" | "monthly">("monthly");
@@ -61,6 +62,15 @@ export default function UploadPage({ onResult }: Props) {
       <div className="w-full max-w-lg">
         {/* Header */}
         <div className="mb-8 text-center">
+          <div className="flex justify-end mb-2">
+            <button
+              type="button"
+              onClick={onHistory}
+              className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1"
+            >
+              <span>🕐</span> History
+            </button>
+          </div>
           <h1 className="text-3xl font-bold text-white tracking-tight">
             LLM Backtesting Bot
           </h1>

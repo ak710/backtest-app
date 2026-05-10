@@ -1,3 +1,17 @@
+export interface RunSummary {
+  id: string;
+  created_at: string;
+  stock_symbol: string;
+  timeframe: string;
+  model_used: string;
+  walk_forward_enabled: boolean;
+  best_sharpe: number | null;
+  best_cagr: number | null;
+  benchmark_cagr: number | null;
+  num_strategies: number;
+  data_quality: string[];
+}
+
 export interface Trade {
   entry_date: string;
   exit_date: string;

@@ -74,3 +74,4 @@ class FullAnalysisResult(BaseModel):
     oos_results: list[BacktestResult] = []
     walk_forward_enabled: bool = False
     walk_forward_split_date: str = ""
+    price_series: dict = {}  # {date_str: close_price} for chart regeneration on history load
