@@ -1,5 +1,5 @@
 import axios from "axios";
-import { AnalysisResponse, RunSummary } from "./types";
+import { AnalysisResponse, ReversalPrediction, RunSummary } from "./types";
 
 const BASE_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -20,4 +20,17 @@ export async function loadRun(id: string): Promise<AnalysisResponse> {
 
 export async function deleteRun(id: string): Promise<void> {
   await apiClient.delete(`/api/runs/${id}`);
+}
+
+export async function predictReversal(
+  ticker: string,
+  peerTickers?: string[],
+  model?: string,
+): Promise<ReversalPrediction> {
+  const res = await apiClient.post<ReversalPrediction>("/api/predict", {
+    ticker,
+    peer_tickers: peerTickers && peerTickers.length > 0 ? peerTickers : undefined,
+    model: model || undefined,
+  });
+  return res.data;
 }

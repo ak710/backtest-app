@@ -6,11 +6,14 @@ import pandas as pd
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 
+from pydantic import BaseModel
+
 from app.config import settings
 from app.models.data_models import BacktestResult, EquityPoint, PreparedData, Trade
 from app.models.llm_schemas import LLMAnalysisResponse
 from app.services.pipeline import run_full_analysis
 from app.services.reporting import generate_report
+from app.services.reversal_predictor import predict_reversal
 from app.services.storage import delete_run, get_run, list_runs, save_run
 from app.utils.logging import get_logger
 
@@ -193,6 +196,40 @@ async def analyze(
         walk_forward_enabled=result.walk_forward_enabled,
         walk_forward_split_date=result.walk_forward_split_date,
     ))
+
+
+class PredictRequest(BaseModel):
+    ticker: str
+    peer_tickers: list[str] | None = None
+    model: str | None = None
+
+
+@router.post("/predict")
+async def predict(req: PredictRequest):
+    ticker = req.ticker.upper().strip()
+    if not ticker:
+        raise HTTPException(status_code=422, detail="ticker is required.")
+
+    model = (req.model or "").strip() or settings.openrouter_model
+
+    if not settings.roic_api_key:
+        raise HTTPException(status_code=503, detail="ROIC_API_KEY is not configured on the server.")
+
+    try:
+        result = predict_reversal(
+            ticker=ticker,
+            peer_tickers=req.peer_tickers,
+            model=model,
+            openrouter_api_key=settings.openrouter_api_key,
+            roic_api_key=settings.roic_api_key,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except Exception as exc:
+        logger.exception("Unexpected error during reversal prediction for %s", ticker)
+        raise HTTPException(status_code=500, detail=f"Prediction failed: {exc}")
+
+    return JSONResponse(content=result)
 
 
 @router.get("/runs")

@@ -80,3 +80,20 @@ class LLMAnalysisResponse(BaseModel):
     top_strategies: list[TopStrategy]
     suggested_modifications: list[SuggestedModification]
     warnings: list[str] = []
+
+
+# ── LLM Call #3: Reversal Prediction ──────────────────────────────────────────
+
+class ReversalPredictionResponse(BaseModel):
+    uptrend_probability: float          # 0–100
+    confidence: str                     # "low" | "medium" | "high"
+    signal_strength: str                # "weak" | "moderate" | "strong"
+    timeframe_estimate: str             # e.g. "4–8 weeks"
+    bullish_signals: list[str]
+    bearish_signals: list[str]
+    neutral_signals: list[str]
+    analysis: str                       # 3–4 paragraph narrative
+    key_support_level: float | None = None
+    key_resistance_level: float | None = None
+    risk_factors: list[str]
+    historical_evidence_summary: str    # 1–2 sentences on what past patterns showed

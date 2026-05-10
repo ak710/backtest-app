@@ -89,6 +89,77 @@ export interface FundamentalContext {
   revenue_cagr_3yr?: number;
 }
 
+// ── Reversal Predictor ────────────────────────────────────────────────────────
+
+export interface PatternHorizonStats {
+  count: number;
+  uptrend_pct: number | null;
+  median_return_pct: number | null;
+  avg_return_pct: number | null;
+}
+
+export interface PatternMatch {
+  date: string;
+  similarity: number;
+  fwd_4w_pct: number | null;
+  fwd_8w_pct: number | null;
+  fwd_12w_pct: number | null;
+}
+
+export interface PatternSummary {
+  match_count: number;
+  avg_similarity: number;
+  horizons: {
+    "4w"?: PatternHorizonStats;
+    "8w"?: PatternHorizonStats;
+    "12w"?: PatternHorizonStats;
+  };
+  matches: PatternMatch[];
+  error?: string;
+  ticker?: string;
+}
+
+export interface IndicatorReading {
+  value: number;
+  label: string;
+}
+
+export interface ReversalSnapshot {
+  current_price: number;
+  high_52w: number;
+  low_52w: number;
+  pct_from_52w_high: number | null;
+  ret_4w_pct: number | null;
+  indicators: Record<string, IndicatorReading>;
+}
+
+export interface ReversalPrediction {
+  ticker: string;
+  company_name: string;
+  current_price: number;
+  change_percent: number | null;
+  as_of: string;
+  weekly_bars: number;
+  snapshot: ReversalSnapshot;
+  own_stock_pattern: PatternSummary;
+  peer_patterns: PatternSummary[];
+  peers_analyzed: string[];
+  prediction: {
+    uptrend_probability: number;
+    confidence: "low" | "medium" | "high";
+    signal_strength: "weak" | "moderate" | "strong";
+    timeframe_estimate: string;
+    bullish_signals: string[];
+    bearish_signals: string[];
+    neutral_signals: string[];
+    analysis: string;
+    key_support_level: number | null;
+    key_resistance_level: number | null;
+    risk_factors: string[];
+    historical_evidence_summary: string;
+  };
+}
+
 export interface AnalysisResponse {
   stock_symbol: string;
   timeframe: string;
