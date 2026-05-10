@@ -49,10 +49,13 @@ def fetch_historical_prices(ticker: str, api_key: str, years: int = 5) -> pd.Dat
         return None
     from datetime import date, timedelta
     date_start = (date.today() - timedelta(days=years * 365)).isoformat()
+    # ~252 trading days/year; set limit generously above that
+    limit = years * 300
     with httpx.Client() as client:
         data = _get(client, f"stock-prices/{ticker.upper()}", api_key, {
             "date_start": date_start,
             "order": "ASC",
+            "limit": limit,
         })
     if not data or not isinstance(data, list):
         logger.warning("No historical price data returned for %s", ticker)
