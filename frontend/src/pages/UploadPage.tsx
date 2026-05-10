@@ -13,6 +13,10 @@ export default function UploadPage({ onResult }: Props) {
   const [timeframe, setTimeframe] = useState<"weekly" | "monthly">("monthly");
   const [rfr, setRfr] = useState("0.03");
   const [model, setModel] = useState("nvidia/nemotron-3-super-120b-a12b:free");
+  const [commission, setCommission] = useState("0.001");
+  const [slippage, setSlippage] = useState("0.0005");
+  const [walkForward, setWalkForward] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -31,6 +35,9 @@ export default function UploadPage({ onResult }: Props) {
     form.append("timeframe", timeframe);
     form.append("risk_free_rate_annual", rfr);
     form.append("model", model.trim());
+    form.append("commission", commission);
+    form.append("slippage", slippage);
+    form.append("walk_forward", String(walkForward));
 
     try {
       const res = await apiClient.post<AnalysisResponse>("/api/analyze", form, {
@@ -165,6 +172,73 @@ export default function UploadPage({ onResult }: Props) {
             <p className="mt-1 text-xs text-gray-500">
               Any model available on OpenRouter (e.g. openai/gpt-4o, google/gemini-pro)
             </p>
+          </div>
+
+          {/* Advanced Settings */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowAdvanced((v) => !v)}
+              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+            >
+              <span className={`transition-transform ${showAdvanced ? "rotate-90" : ""}`}>▶</span>
+              Advanced Settings
+            </button>
+            {showAdvanced && (
+              <div className="mt-3 space-y-4 bg-gray-800/40 border border-gray-700 rounded-lg p-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">
+                      Commission Rate
+                    </label>
+                    <input
+                      type="number"
+                      value={commission}
+                      onChange={(e) => setCommission(e.target.value)}
+                      step="0.0001"
+                      min="0"
+                      max="0.05"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="mt-0.5 text-xs text-gray-600">e.g. 0.001 = 0.1%</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-400 mb-1">
+                      Slippage Rate
+                    </label>
+                    <input
+                      type="number"
+                      value={slippage}
+                      onChange={(e) => setSlippage(e.target.value)}
+                      step="0.0001"
+                      min="0"
+                      max="0.05"
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <p className="mt-0.5 text-xs text-gray-600">e.g. 0.0005 = 0.05%</p>
+                  </div>
+                </div>
+                <label className="flex items-start gap-3 cursor-pointer select-none">
+                  <div className="relative mt-0.5">
+                    <input
+                      type="checkbox"
+                      checked={walkForward}
+                      onChange={(e) => setWalkForward(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-gray-700 peer-checked:bg-blue-600 rounded-full transition-colors" />
+                    <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+                  </div>
+                  <div>
+                    <p className="text-xs font-medium text-gray-300">Walk-Forward Validation</p>
+                    <p className="text-xs text-gray-600 mt-0.5">
+                      Splits data 70/30. LLM selects on the in-sample period; top strategies are
+                      re-run on the held-out period to test out-of-sample generalisability.
+                    </p>
+                  </div>
+                </label>
+              </div>
+            )}
           </div>
 
           {/* Error */}

@@ -121,13 +121,34 @@ def load_and_prepare_timeseries(
         "years_covered": round((df.index[-1] - df.index[0]).days / 365.25, 2),
     }
 
-    # Warn on short datasets
+    # ── Data quality checks ─────────────────────────────────────────────────
     min_bars = 36 if target_frequency == "monthly" else 156
+    quality_issues: list[str] = []
+
     if len(df) < min_bars:
-        logger.warning(
-            "Short dataset: %d bars. Results may be unreliable (recommended >= %d).",
-            len(df),
-            min_bars,
+        quality_issues.append(
+            f"Short dataset: {len(df)} {target_frequency} bars (recommended ≥ {min_bars}). "
+            "Metrics may overfit to noise."
+        )
+        logger.warning("Short dataset: %d bars (recommended >= %d).", len(df), min_bars)
+
+    # Gap detection: bars spaced more than 2.5× the expected interval
+    expected_days = 7 if target_frequency == "weekly" else 30
+    gap_days = diffs.dt.days
+    large_gaps = gap_days[gap_days > expected_days * 2.5]
+    if not large_gaps.empty:
+        quality_issues.append(
+            f"{len(large_gaps)} gap(s) detected between bars "
+            f"(largest: {int(large_gaps.max())} days). Data may be incomplete."
+        )
+
+    # Suspicious price jumps: >50% close-to-close change in a single bar
+    price_changes = df["close"].pct_change().abs().dropna()
+    big_moves = price_changes[price_changes > 0.5]
+    if not big_moves.empty:
+        quality_issues.append(
+            f"{len(big_moves)} bar(s) with >50% price change detected — "
+            "possible corporate action or data error."
         )
 
     return PreparedData(
@@ -139,4 +160,5 @@ def load_and_prepare_timeseries(
         start_date=str(df.index[0].date()),
         end_date=str(df.index[-1].date()),
         basic_stats=basic_stats,
+        data_quality=quality_issues,
     )

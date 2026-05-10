@@ -89,4 +89,10 @@ export interface AnalysisResponse {
   modified_strategy_charts: (PlotlyChart | Record<string, never>)[];
   selection_rationales: SelectionRationale[];
   fundamental_context: FundamentalContext | null;
+  benchmark: StrategyResult | null;
+  data_quality: string[];
+  oos_strategies: StrategyResult[];
+  oos_strategy_charts: (PlotlyChart | Record<string, never>)[];
+  walk_forward_enabled: boolean;
+  walk_forward_split_date: string;
 }

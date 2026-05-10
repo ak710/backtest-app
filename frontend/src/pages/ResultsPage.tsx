@@ -26,6 +26,7 @@ export default function ResultsPage({ result, onReset }: Props) {
 
   const valid = result.base_strategies.filter((s) => !s.skipped);
   const best = [...valid].sort((a, b) => b.metrics.sharpe - a.metrics.sharpe)[0];
+  const bh = result.benchmark ?? null;
   const pct = (v: number) => `${(v * 100).toFixed(1)}%`;
 
   const isValidChart = (c: PlotlyChart | Record<string, never>): c is PlotlyChart =>
@@ -62,6 +63,16 @@ export default function ResultsPage({ result, onReset }: Props) {
         </button>
       </div>
 
+      {/* Data quality warnings */}
+      {result.data_quality && result.data_quality.length > 0 && (
+        <div className="bg-yellow-950/60 border border-yellow-700 rounded-xl px-5 py-4 space-y-1">
+          <p className="text-xs font-semibold text-yellow-400 uppercase tracking-wide mb-1">Data Quality Warnings</p>
+          {result.data_quality.map((issue, i) => (
+            <p key={i} className="text-sm text-yellow-300">⚠ {issue}</p>
+          ))}
+        </div>
+      )}
+
       {/* Summary cards */}
       {best && (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
@@ -70,9 +81,21 @@ export default function ResultsPage({ result, onReset }: Props) {
             value={best.metrics.sharpe.toFixed(2)}
             sub={`${best.indicator_name.toUpperCase()} / ${best.strategy_template}`}
           />
-          <MetricCard label="Best Total Return" value={pct(best.metrics.total_return)} sub="Best strategy" />
-          <MetricCard label="Best CAGR" value={pct(best.metrics.cagr)} sub="Annualized" />
-          <MetricCard label="Max Drawdown" value={pct(Math.abs(best.metrics.max_drawdown))} sub="Best strategy" />
+          <MetricCard
+            label="Best Total Return"
+            value={pct(best.metrics.total_return)}
+            sub={bh ? `vs B&H ${pct(bh.metrics.total_return)}` : "Best strategy"}
+          />
+          <MetricCard
+            label="Best CAGR"
+            value={pct(best.metrics.cagr)}
+            sub={bh ? `vs B&H ${pct(bh.metrics.cagr)}` : "Annualized"}
+          />
+          <MetricCard
+            label="Max Drawdown"
+            value={pct(Math.abs(best.metrics.max_drawdown))}
+            sub={bh ? `B&H DD ${pct(Math.abs(bh.metrics.max_drawdown))}` : "Best strategy"}
+          />
         </div>
       )}
 
@@ -90,12 +113,28 @@ export default function ResultsPage({ result, onReset }: Props) {
         warnings={result.llm_warnings}
       />
 
+      {/* Walk-forward banner */}
+      {result.walk_forward_enabled && result.walk_forward_split_date && (
+        <div className="bg-blue-950/50 border border-blue-700 rounded-xl px-5 py-4 flex items-start gap-3">
+          <span className="text-blue-400 text-lg mt-0.5">⚡</span>
+          <div>
+            <p className="text-sm font-semibold text-blue-300">Walk-Forward Validation Enabled</p>
+            <p className="text-xs text-blue-400 mt-0.5">
+              In-sample period ends <span className="font-mono font-semibold">{result.walk_forward_split_date}</span>.
+              Strategy selection and backtests below use only the in-sample data.
+              The LLM's top strategies were re-run on the held-out out-of-sample period — see the OOS section below.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Base Strategy Table */}
       <StrategyTable
         strategies={result.base_strategies}
-        title="Base Strategy Results"
+        title={result.walk_forward_enabled ? "In-Sample Strategy Results" : "Base Strategy Results"}
         charts={result.strategy_charts}
         onViewGraph={setActiveChart}
+        benchmark={bh}
       />
 
       {/* Modified Strategies Table */}
@@ -106,6 +145,28 @@ export default function ResultsPage({ result, onReset }: Props) {
           charts={result.modified_strategy_charts}
           onViewGraph={setActiveChart}
         />
+      )}
+
+      {/* Out-of-Sample Results */}
+      {result.walk_forward_enabled && result.oos_strategies.length > 0 && (
+        <div className="space-y-4">
+          <div className="flex items-center gap-3">
+            <div className="flex-1 h-px bg-blue-800/40" />
+            <span className="text-xs font-semibold text-blue-400 uppercase tracking-widest">Out-of-Sample Validation</span>
+            <div className="flex-1 h-px bg-blue-800/40" />
+          </div>
+          <p className="text-xs text-gray-500">
+            These are the LLM's top-ranked in-sample strategies, replayed on the held-out{" "}
+            {result.walk_forward_split_date ? `data from ${result.walk_forward_split_date} onwards` : "OOS period"}.
+            Lower OOS performance relative to IS is normal; large divergence suggests overfitting.
+          </p>
+          <StrategyTable
+            strategies={result.oos_strategies}
+            title="Out-of-Sample Results"
+            charts={result.oos_strategy_charts}
+            onViewGraph={setActiveChart}
+          />
+        </div>
       )}
 
       {/* Summary charts (equity curve + performance comparison) */}

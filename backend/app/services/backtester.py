@@ -133,3 +133,51 @@ def run_strategy(
         equity_curve=equity_curve,
         period_returns=period_returns,
     )
+
+
+def run_benchmark(data: PreparedData, risk_settings: RiskSettings) -> BacktestResult:
+    """Buy-and-hold: enter at first bar close, exit at last bar close."""
+    df = data.df
+    close = df["close"]
+    initial_capital = risk_settings.initial_capital
+    commission_rate = risk_settings.commission
+    slippage_rate = risk_settings.slippage
+
+    first_price = float(close.iloc[0])
+    buy_price = first_price * (1 + slippage_rate)
+    shares = initial_capital * (1 - commission_rate) / buy_price
+
+    equity_curve: list[EquityPoint] = []
+    period_returns: list[float] = []
+    prev_equity = initial_capital
+
+    for i in range(len(df)):
+        date_str = str(df.index[i].date() if hasattr(df.index[i], "date") else df.index[i])
+        price = float(close.iloc[i])
+        current_equity = shares * price if not np.isnan(price) else prev_equity
+        equity_curve.append(EquityPoint(date=date_str, equity=round(current_equity, 4)))
+        if i > 0 and prev_equity > 0:
+            period_returns.append((current_equity - prev_equity) / prev_equity)
+        prev_equity = current_equity
+
+    last_price = float(close.iloc[-1])
+    sell_price = last_price * (1 - slippage_rate)
+    pnl_pct = (sell_price - buy_price) / buy_price
+    entry_date = str(df.index[0].date() if hasattr(df.index[0], "date") else df.index[0])
+    exit_date = str(df.index[-1].date() if hasattr(df.index[-1], "date") else df.index[-1])
+
+    return BacktestResult(
+        indicator_name="buy_and_hold",
+        strategy_template="buy_and_hold",
+        params={},
+        trades=[Trade(
+            entry_date=entry_date,
+            exit_date=exit_date,
+            entry_price=buy_price,
+            exit_price=sell_price,
+            pnl_pct=pnl_pct,
+            num_bars=len(df) - 1,
+        )],
+        equity_curve=equity_curve,
+        period_returns=period_returns,
+    )

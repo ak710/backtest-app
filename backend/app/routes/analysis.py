@@ -26,6 +26,9 @@ async def analyze(
     timeframe: Annotated[str, Form()],
     risk_free_rate_annual: Annotated[float, Form()] = 0.03,
     model: Annotated[str, Form()] = "",
+    commission: Annotated[float, Form()] = 0.001,
+    slippage: Annotated[float, Form()] = 0.0005,
+    walk_forward: Annotated[bool, Form()] = False,
 ):
     if timeframe not in ("weekly", "monthly"):
         raise HTTPException(status_code=422, detail="timeframe must be 'weekly' or 'monthly'")
@@ -44,6 +47,9 @@ async def analyze(
             timeframe=timeframe,
             risk_free_rate_annual=risk_free_rate_annual,
             model=model.strip() or None,
+            commission=max(0.0, min(commission, 0.05)),
+            slippage=max(0.0, min(slippage, 0.05)),
+            walk_forward=walk_forward,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -63,6 +69,19 @@ async def analyze(
             "trades": [t.model_dump() for t in r.trades],
         }
 
+    bm = result.benchmark_result
+    benchmark_payload = None
+    if bm:
+        benchmark_payload = {
+            "indicator_name": bm.indicator_name,
+            "strategy_template": bm.strategy_template,
+            "params": bm.params,
+            "skipped": bm.skipped,
+            "skip_reason": bm.skip_reason,
+            "metrics": bm.metrics,
+            "trades": [t.model_dump() for t in bm.trades],
+        }
+
     return JSONResponse(
         content={
             "stock_symbol": result.stock_symbol,
@@ -79,5 +98,11 @@ async def analyze(
             "modified_strategy_charts": result.report.get("modified_strategy_charts", []),
             "selection_rationales": result.selection_rationales,
             "fundamental_context": result.fundamental_context,
+            "benchmark": benchmark_payload,
+            "data_quality": result.data_quality,
+            "oos_strategies": [_safe_metrics(r) for r in result.oos_results],
+            "oos_strategy_charts": result.report.get("oos_strategy_charts", []),
+            "walk_forward_enabled": result.walk_forward_enabled,
+            "walk_forward_split_date": result.walk_forward_split_date,
         }
     )

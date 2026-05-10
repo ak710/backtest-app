@@ -18,6 +18,7 @@ class PreparedData(BaseModel):
     start_date: str
     end_date: str
     basic_stats: dict
+    data_quality: list[str] = []
 
     @field_validator("df", "returns", mode="before")
     @classmethod
@@ -68,3 +69,8 @@ class FullAnalysisResult(BaseModel):
     report: dict
     selection_rationales: list[dict] = []
     fundamental_context: dict | None = None
+    benchmark_result: BacktestResult | None = None
+    data_quality: list[str] = []
+    oos_results: list[BacktestResult] = []
+    walk_forward_enabled: bool = False
+    walk_forward_split_date: str = ""
