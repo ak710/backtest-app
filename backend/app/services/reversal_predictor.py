@@ -379,7 +379,7 @@ def predict_reversal(
     logger.info("Starting reversal prediction for %s", ticker)
 
     # 1. Fetch historical prices
-    daily_df = fetch_historical_prices(ticker, roic_api_key, limit=1300)
+    daily_df = fetch_historical_prices(ticker, roic_api_key)
     if daily_df is None or len(daily_df) < 40:
         raise ValueError(f"Insufficient historical price data for {ticker}. The ticker may be invalid or not covered.")
 

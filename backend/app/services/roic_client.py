@@ -38,17 +38,22 @@ def _revenue_growth(records: list[dict]) -> float | None:
     return round((vals[-1] / vals[0]) ** (1 / years) - 1, 4)
 
 
-def fetch_historical_prices(ticker: str, api_key: str, limit: int = 1300) -> pd.DataFrame | None:
+def fetch_historical_prices(ticker: str, api_key: str, years: int = 5) -> pd.DataFrame | None:
     """
-    Fetch daily OHLCV history from roic.ai (up to `limit` trading days).
+    Fetch daily OHLCV history from roic.ai going back `years` years.
     Returns a DataFrame sorted ascending by date with columns:
     time, open, high, low, close, volume.
     Returns None if the request fails or returns no data.
     """
     if not api_key:
         return None
+    from datetime import date, timedelta
+    date_start = (date.today() - timedelta(days=years * 365)).isoformat()
     with httpx.Client() as client:
-        data = _get(client, f"stock-prices/{ticker.upper()}", api_key, {"limit": limit, "order": "DESC"})
+        data = _get(client, f"stock-prices/{ticker.upper()}", api_key, {
+            "date_start": date_start,
+            "order": "ASC",
+        })
     if not data or not isinstance(data, list):
         logger.warning("No historical price data returned for %s", ticker)
         return None
