@@ -51,6 +51,7 @@ class LLMClient:
         }
         payload = {
             "model": self.model,
+            "max_tokens": 16384,
             "messages": [
                 {"role": "system", "content": system},
                 {"role": "user", "content": user},
