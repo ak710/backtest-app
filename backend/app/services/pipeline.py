@@ -381,14 +381,14 @@ def run_full_analysis(
                 combo_cfg=combo_cfg,
                 risk_settings=risk_settings,
             )
-        elif "+" in mod.base_indicator_name and mod.new_combo_logic is not None:
-            # Logic-only change: find original combo in base_results and re-run with new logic
+        elif "+" in mod.base_indicator_name:
+            # Combo modification where LLM forgot to populate new_combo_components —
+            # reconstruct from the original base result and apply new_combo_logic if provided
             original = next(
                 (r for r in base_results if r.indicator_name == mod.base_indicator_name and not r.skipped),
                 None,
             )
             if original is not None:
-                # Reconstruct ComboIndicatorConfig from stored params
                 component_names = mod.base_indicator_name.split("+")
                 components = [
                     SelectedIndicatorConfig(
@@ -399,9 +399,10 @@ def run_full_analysis(
                     )
                     for name in component_names
                 ]
+                new_logic = mod.new_combo_logic or ("MAJORITY" if "combo_and" in mod.base_strategy_template else "AND")
                 combo_cfg = ComboIndicatorConfig(
                     indicators=components,
-                    combo_logic=mod.new_combo_logic,
+                    combo_logic=new_logic,
                     rationale=mod.expected_effect,
                 )
                 result = _run_backtest_for_combo(
@@ -410,6 +411,8 @@ def run_full_analysis(
                     combo_cfg=combo_cfg,
                     risk_settings=risk_settings,
                 )
+            else:
+                logger.warning("Combo modification: no base result found for %s — skipping", mod.base_indicator_name)
         else:
             # Standard single-indicator modification
             merged_params = {**mod.new_params, **mod.risk_controls}

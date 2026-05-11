@@ -52,12 +52,21 @@ export interface TopStrategy {
   reason: string;
 }
 
+export interface ComboComponent {
+  indicator_name: string;
+  params: Record<string, unknown>;
+  strategy_template: string;
+  rationale: string;
+}
+
 export interface SuggestedModification {
   base_indicator_name: string;
   base_strategy_template: string;
   new_params: Record<string, unknown>;
   risk_controls: Record<string, unknown>;
   expected_effect: string;
+  new_combo_components?: ComboComponent[] | null;
+  new_combo_logic?: string | null;
 }
 
 export interface PlotlyChart {

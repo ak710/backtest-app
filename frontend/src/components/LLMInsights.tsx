@@ -84,12 +84,28 @@ export default function LLMInsights({
                   {m.base_indicator_name.toUpperCase()} –{" "}
                   {m.base_strategy_template}
                 </p>
-                <p className="text-gray-300 text-xs">
-                  New params:{" "}
-                  {Object.entries(m.new_params)
-                    .map(([k, v]) => `${k}=${v}`)
-                    .join(", ")}
-                </p>
+                {m.new_combo_components && m.new_combo_components.length > 0 ? (
+                  <div className="text-gray-300 text-xs space-y-0.5">
+                    <span className="text-gray-400">Components ({m.new_combo_logic ?? "MAJORITY"}):</span>
+                    {m.new_combo_components.map((c, ci) => (
+                      <div key={ci} className="ml-2">
+                        <span className="text-gray-200">{c.indicator_name}</span>
+                        {Object.keys(c.params).length > 0 && (
+                          <span className="text-gray-400">
+                            {" "}({Object.entries(c.params).map(([k, v]) => `${k}=${v}`).join(", ")})
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-gray-300 text-xs">
+                    New params:{" "}
+                    {Object.entries(m.new_params)
+                      .map(([k, v]) => `${k}=${v}`)
+                      .join(", ")}
+                  </p>
+                )}
                 {Object.keys(m.risk_controls).length > 0 && (
                   <p className="text-gray-300 text-xs">
                     Risk controls:{" "}

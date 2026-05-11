@@ -337,11 +337,24 @@ Instructions:
    c. Provide expected_sharpe_range as [low_estimate, high_estimate] — be realistic.
    d. Label each with targets: "drawdown", "sharpe", "win_rate", or "frequency".
    e. At least 2 modifications targeting sharpe, at least 1 targeting drawdown.
-   f. COMBINED strategies (indicator_name containing '+') CAN and SHOULD be modified. To modify a combo:
-      - Set new_combo_components to the full updated component list (change params, swap indicators, or both)
-      - Optionally set new_combo_logic to change AND ↔ MAJORITY
-      - Set new_params to {{}} when using new_combo_components
-      - Good examples: tighten RSI oversold in RSI+MACD; change AND→MAJORITY to get more trades; swap slow MA for EMA
+   f. COMBINED strategies (indicator_name containing '+') CAN and SHOULD be modified. To modify a combo you MUST populate new_combo_components — never leave it null for a combo modification. Rules:
+      - new_combo_components: full updated component list — include ALL components (even unchanged ones), each with indicator_name, params, strategy_template, rationale
+      - new_combo_logic: set to "AND" or "MAJORITY" (required — never null for combo mods)
+      - new_params: always {{}} when modifying a combo
+      - Example — changing EMA+ADX from AND to MAJORITY logic:
+        "base_indicator_name": "EMA+ADX", "base_strategy_template": "combo_and", "new_params": {{}},
+        "new_combo_logic": "MAJORITY",
+        "new_combo_components": [
+          {{"indicator_name": "EMA", "params": {{"fast_length": 8, "slow_length": 30}}, "strategy_template": "ma_crossover", "rationale": "trend signal"}},
+          {{"indicator_name": "ADX", "params": {{"length": 14, "strength_threshold": 20}}, "strategy_template": "adx_breakout", "rationale": "trend filter"}}
+        ]
+      - Example — swapping MACD for ADX in MACD+OBV:
+        "base_indicator_name": "MACD+OBV", "base_strategy_template": "combo_majority", "new_params": {{}},
+        "new_combo_logic": "MAJORITY",
+        "new_combo_components": [
+          {{"indicator_name": "ADX", "params": {{"length": 14, "strength_threshold": 25}}, "strategy_template": "adx_breakout", "rationale": "replaces MACD"}},
+          {{"indicator_name": "OBV", "params": {{"sma_length": 20}}, "strategy_template": "obv_momentum", "rationale": "volume confirmation"}}
+        ]
 4. Include warnings about data limitations.
 
 Respond with ONLY this JSON:
@@ -357,8 +370,8 @@ Respond with ONLY this JSON:
   ],
   "suggested_modifications": [
     {{
-      "base_indicator_name": "<name or 'rsi+macd' for combo>",
-      "base_strategy_template": "<template>",
+      "base_indicator_name": "<name or 'EMA+ADX' for combo>",
+      "base_strategy_template": "<template e.g. combo_and>",
       "new_params": {{}},
       "risk_controls": {{}},
       "expected_effect": "<mechanism: WHY this change improves performance>",
