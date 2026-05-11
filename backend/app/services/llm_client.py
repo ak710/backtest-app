@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from app.models.indicators import INDICATOR_STRATEGIES
 from app.models.llm_schemas import (
+    ComboIndicatorConfig,
     IndicatorSelectionResponse,
     LLMAnalysisRequest,
     LLMAnalysisResponse,
@@ -128,12 +129,38 @@ Price regime signals:
   Full-period annualized vol: {pr.get('full_period_vol_annualized', 0):.1%}
   Regime hint: {pr.get('regime_hint', 'mixed')}
 
-IMPORTANT: Let the regime hint guide your indicator class selection:
-  - If regime_hint = "momentum" → heavily favor trend-following and momentum indicators (MA crossovers, MACD, ADX, ROC). Mean-reversion indicators are unlikely to work here.
-  - If regime_hint = "mean-reversion" → heavily favor oscillator-based indicators (RSI, Stochastic, Bollinger Bands, CCI). Trend-following will generate whipsaws.
-  - If regime_hint = "mixed" → balance both but lean toward indicators with adaptive behavior.
-  - In a high-volatility regime → prefer wider bands/longer lookbacks to reduce noise; avoid tight stop-losses.
-  - In a low-volatility regime → shorter lookbacks and tighter entry thresholds can be more responsive.
+INDICATOR REGIME-FIT REFERENCE — match your picks to the regime above:
+
+TRENDING / MOMENTUM regime (autocorr > 0.1 OR strong positive trend slope):
+  ma_crossover strategy:      sma, ema, hma, aroon, donchian, psar, vortex, kama
+  macd_trend strategy:        macd, ppo, trix, kst, tsi
+  adx_breakout strategy:      adx  (confirms trend strength before entry)
+  atr_trailing_stop strategy: atr  (adaptive trend exit)
+  zero_cross strategy:        roc, roc2  (roc = momentum filter when positive; roc2 = acceleration signal)
+  rsi_trend_follow strategy:  rsi  (RSI above 50 + price above MA)
+  obv_momentum strategy:      obv, cmf, fi, eom, vpt, ao  (volume-confirmed trend)
+  AVOID: bollinger_mean_reversion, stoch_mean_reversion, cci_mean_reversion, rsi_mean_reversion
+
+MEAN-REVERSION / SIDEWAYS regime (autocorr < -0.1 OR flat/negative trend slope):
+  rsi_mean_reversion strategy:    rsi, mfi, uo  (oscillator extremes)
+  stoch_mean_reversion strategy:  stoch, willr, stochrsi
+  cci_mean_reversion strategy:    cci, dpo
+  bollinger_mean_reversion:       bbands, kc
+  AVOID: ma_crossover, macd_trend, adx_breakout, atr_trailing_stop, zero_cross (all whipsaw)
+
+MIXED / UNCERTAIN regime (autocorr near zero):
+  Prefer adaptive/multi-timeframe: kama (ma_crossover), uo (rsi_mean_reversion), tsi (macd_trend)
+  Acceptable both ways: rsi (either template), bbands, adx (as entry filter only)
+
+ROC / ROC2 NOTES:
+  roc (zero_cross): ideal momentum regime filter — buy when price % change crosses above zero.
+    Unreliable standalone in mean-reversion regime; best used as a combo component.
+  roc2 (zero_cross): momentum *acceleration* — buy when rate-of-change itself turns positive.
+    Useful even in mixed regimes as a combo confirmation (pair with a slower trend indicator).
+
+VOLATILITY ADJUSTMENTS:
+  High vol → wider bands (bbands std ≥ 2.5), longer ATR multiplier (≥ 2.5), longer lookbacks
+  Low vol  → tighter thresholds, shorter lookbacks
 """
 
         user_prompt = f"""Stock: {req.stock_symbol}
@@ -149,13 +176,22 @@ Available indicators:
 {catalog_json}
 
 Instructions:
-- Select 8-12 indicator configurations. Fewer high-quality picks beat 15 mediocre ones.
-- Each pick must be grounded in the regime signals above — your rationale must reference the autocorrelation or trend slope when relevant.
+- Select 8-12 single-indicator configurations. Fewer high-quality picks beat 15 mediocre ones.
+- Each pick MUST be from the correct regime category above. Do NOT select indicators from the AVOID list for the current regime.
+- Each pick must be grounded in the regime signals — your rationale must reference autocorrelation and/or trend slope.
+- Rate each pick with confidence 1–5. Only include picks with confidence ≥ 3. Confidence reflects: fit to regime, likelihood of beating the benchmark, expected trade frequency.
+- Trade frequency: each configuration must be expected to generate at least 8 trades over {req.num_bars} bars. Shorter lookbacks generate more signals; longer lookbacks generate fewer. Avoid configs likely to produce < 8 trades.
+- {"Overfitting guard: with only " + str(req.num_bars) + " bars, avoid indicators with more than 2 tunable parameters." if req.num_bars < 80 else ""}
 - For each, pick parameters within the specified param_ranges.
 - Assign a strategy_template from the indicator's compatible_strategies list.
-- Use the fundamental context to bias your choices: high ROIC + strong revenue growth → favour trend/momentum; low margins + cyclical profile → favour mean-reversion and volatility indicators.
+- Use fundamental context to bias: high ROIC + strong revenue growth → favour trend/momentum; low margins + cyclical → favour mean-reversion and volatility.
 - For indicators with fast/slow lengths, ensure fast < slow.
-- Do NOT include an indicator class that directly contradicts the regime hint (e.g. do not include pure trend-following in a mean-reversion regime unless you have a strong fundamental reason).
+- Also suggest 2–3 combined strategies in combo_configs_to_test. Each combo must:
+  • Pair indicators from DIFFERENT categories (e.g., a momentum oscillator + a trend filter)
+  • Each component must individually fit the regime
+  • AND logic = higher conviction, fewer trades; MAJORITY logic = more trades, less filtering
+  • Include a rationale explaining why the pairing reduces false signals compared to either indicator alone
+  • roc2 is excellent as a combo confirmation component (momentum acceleration) even in mixed regimes
 
 Respond with ONLY this JSON:
 {{
@@ -164,7 +200,18 @@ Respond with ONLY this JSON:
       "indicator_name": "<name>",
       "params": {{}},
       "strategy_template": "<template>",
-      "rationale": "<why this configuration can beat the buy-and-hold Sharpe, referencing regime signals>"
+      "rationale": "<why this beats buy-and-hold Sharpe, referencing regime signals>",
+      "confidence": <1-5>
+    }}
+  ],
+  "combo_configs_to_test": [
+    {{
+      "indicators": [
+        {{"indicator_name": "<name>", "params": {{}}, "strategy_template": "<template>", "rationale": ""}},
+        {{"indicator_name": "<name>", "params": {{}}, "strategy_template": "<template>", "rationale": ""}}
+      ],
+      "combo_logic": "<AND|MAJORITY>",
+      "rationale": "<why this pairing reduces false signals>"
     }}
   ]
 }}"""
@@ -175,46 +222,78 @@ Respond with ONLY this JSON:
         if not parsed:
             raise ValueError("LLM returned unparseable JSON for indicator selection.")
 
-        # Validate and filter
+        from app.models.indicators import INDICATOR_CATALOG, INDICATOR_STRATEGIES
+
+        def _validate_single_config(item: dict) -> SelectedIndicatorConfig | None:
+            """Validate, fix, and clip a single indicator config dict. Returns None if invalid."""
+            try:
+                cfg = SelectedIndicatorConfig(**item)
+            except (ValidationError, TypeError) as exc:
+                logger.warning("Invalid indicator config from LLM: %s – %s", item, exc)
+                return None
+            if cfg.indicator_name not in INDICATOR_CATALOG:
+                logger.warning("LLM picked unknown indicator: %s", cfg.indicator_name)
+                return None
+            allowed = INDICATOR_STRATEGIES.get(cfg.indicator_name, [])
+            if cfg.strategy_template not in allowed:
+                if allowed:
+                    cfg.strategy_template = allowed[0]
+                else:
+                    return None
+            meta = INDICATOR_CATALOG[cfg.indicator_name]
+            clipped_params = {}
+            for k, v in cfg.params.items():
+                if k in meta.param_ranges:
+                    r = meta.param_ranges[k]
+                    if isinstance(r, dict) and "min" in r:
+                        clipped_params[k] = max(r["min"], min(r["max"], v))
+                    else:
+                        clipped_params[k] = v
+                else:
+                    clipped_params[k] = v
+            cfg.params = clipped_params
+            return cfg
+
+        # Parse and filter single-indicator configs
         raw_list = parsed.get("indicators_to_test", [])
         valid_configs: list[SelectedIndicatorConfig] = []
         for item in raw_list:
-            try:
-                cfg = SelectedIndicatorConfig(**item)
-                # Check indicator exists in registry
-                from app.models.indicators import INDICATOR_CATALOG, INDICATOR_STRATEGIES
-                if cfg.indicator_name not in INDICATOR_CATALOG:
-                    logger.warning("LLM picked unknown indicator: %s", cfg.indicator_name)
-                    continue
-                # Check strategy is compatible
-                allowed = INDICATOR_STRATEGIES.get(cfg.indicator_name, [])
-                if cfg.strategy_template not in allowed:
-                    # Use first compatible strategy
-                    if allowed:
-                        cfg.strategy_template = allowed[0]
-                    else:
-                        continue
-                # Clip params to ranges
-                meta = INDICATOR_CATALOG[cfg.indicator_name]
-                clipped_params = {}
-                for k, v in cfg.params.items():
-                    if k in meta.param_ranges:
-                        r = meta.param_ranges[k]
-                        if isinstance(r, dict) and "min" in r:
-                            clipped_params[k] = max(r["min"], min(r["max"], v))
-                        else:
-                            clipped_params[k] = v
-                    else:
-                        clipped_params[k] = v
-                cfg.params = clipped_params
-                valid_configs.append(cfg)
-            except (ValidationError, TypeError) as exc:
-                logger.warning("Invalid indicator config from LLM: %s – %s", item, exc)
+            cfg = _validate_single_config(item)
+            if cfg is None:
+                continue
+            if cfg.confidence < 3:
+                logger.info("Dropping low-confidence config: %s (confidence=%d)", cfg.indicator_name, cfg.confidence)
+                continue
+            valid_configs.append(cfg)
 
         if not valid_configs:
             raise ValueError("LLM returned no valid indicator configurations.")
 
-        return IndicatorSelectionResponse(indicators_to_test=valid_configs)
+        # Parse and validate combo configs
+        raw_combos = parsed.get("combo_configs_to_test", [])
+        valid_combos: list[ComboIndicatorConfig] = []
+        for combo_item in raw_combos:
+            try:
+                raw_components = combo_item.get("indicators", [])
+                validated_components = []
+                for comp in raw_components:
+                    comp_cfg = _validate_single_config(comp)
+                    if comp_cfg is not None:
+                        validated_components.append(comp_cfg)
+                if len(validated_components) < 2:
+                    logger.warning("Combo has fewer than 2 valid components — skipping")
+                    continue
+                combo = ComboIndicatorConfig(
+                    indicators=validated_components,
+                    combo_logic=combo_item.get("combo_logic", "AND"),
+                    rationale=combo_item.get("rationale", ""),
+                )
+                valid_combos.append(combo)
+            except (ValidationError, TypeError) as exc:
+                logger.warning("Invalid combo config from LLM: %s – %s", combo_item, exc)
+
+        logger.info("Parsed %d single configs, %d combo configs", len(valid_configs), len(valid_combos))
+        return IndicatorSelectionResponse(indicators_to_test=valid_configs, combo_configs_to_test=valid_combos)
 
     def analyze_results(self, req: LLMAnalysisRequest) -> LLMAnalysisResponse:
         summaries_json = json.dumps(
@@ -250,13 +329,18 @@ Additional notes: {req.notes or "None"}
 
 Instructions:
 1. Rank strategies by ROBUSTNESS (not just Sharpe). Prioritize strategies where beats_benchmark=true. Consider drawdown, num_trades, win_rate.
-2. Explain which indicators worked best and WHY — reference the specific market condition or price pattern that the indicator exploits.
-3. Suggest AT LEAST 4 specific parameter modifications. Rules for modifications:
-   a. ONLY modify strategies that already beat the benchmark or are very close (Sharpe within 0.2 of benchmark). Do not try to salvage badly underperforming strategies.
-   b. Each modification must change the strategy's behavior MEANINGFULLY — not trivial ±1 tweaks. The change must have a clear mechanism (e.g. "widening the Bollinger Band from 2.0 to 2.5 std reduces false breakout signals in high-vol regimes").
-   c. Provide an expected_sharpe_range as [low_estimate, high_estimate] — be realistic, not optimistic.
-   d. Label each modification with a targets field: one of "drawdown", "sharpe", "win_rate", or "frequency".
-   e. Include at least 2 modifications targeting Sharpe improvement and at least 1 targeting drawdown reduction.
+2. Explain which indicators worked best and WHY — reference the specific market condition or price pattern the indicator exploits.
+3. Suggest AT LEAST 4 parameter modifications. Rules:
+   a. ONLY modify strategies that beat the benchmark or are within 0.2 Sharpe of it. Do not try to salvage badly underperforming strategies.
+   b. Each modification must be MEANINGFUL — not trivial ±1 tweaks. State the mechanism (e.g. "widening BB from 2.0 to 2.5 std filters false breakouts in high-vol regimes").
+   c. Provide expected_sharpe_range as [low_estimate, high_estimate] — be realistic.
+   d. Label each with targets: "drawdown", "sharpe", "win_rate", or "frequency".
+   e. At least 2 modifications targeting sharpe, at least 1 targeting drawdown.
+   f. COMBINED strategies (indicator_name containing '+') CAN and SHOULD be modified. To modify a combo:
+      - Set new_combo_components to the full updated component list (change params, swap indicators, or both)
+      - Optionally set new_combo_logic to change AND ↔ MAJORITY
+      - Set new_params to {{}} when using new_combo_components
+      - Good examples: tighten RSI oversold in RSI+MACD; change AND→MAJORITY to get more trades; swap slow MA for EMA
 4. Include warnings about data limitations.
 
 Respond with ONLY this JSON:
@@ -267,18 +351,20 @@ Respond with ONLY this JSON:
       "indicator_name": "<name>",
       "strategy_template": "<template>",
       "params": {{}},
-      "reason": "<why this is top, referencing beats_benchmark status and specific metrics>"
+      "reason": "<why this is top, referencing beats_benchmark and specific metrics>"
     }}
   ],
   "suggested_modifications": [
     {{
-      "base_indicator_name": "<name>",
+      "base_indicator_name": "<name or 'rsi+macd' for combo>",
       "base_strategy_template": "<template>",
       "new_params": {{}},
       "risk_controls": {{}},
-      "expected_effect": "<mechanism: WHY this parameter change improves performance>",
+      "expected_effect": "<mechanism: WHY this change improves performance>",
       "expected_sharpe_range": [<low_float>, <high_float>],
-      "targets": "<drawdown|sharpe|win_rate|frequency>"
+      "targets": "<drawdown|sharpe|win_rate|frequency>",
+      "new_combo_components": null,
+      "new_combo_logic": null
     }}
   ],
   "warnings": ["<warning1>"]

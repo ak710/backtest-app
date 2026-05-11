@@ -8,8 +8,9 @@ import pandas as pd
 from app.config import settings
 from app.models.data_models import BacktestResult, FullAnalysisResult, PreparedData, RiskSettings
 from app.models.indicators import IndicatorRegistry
-from app.models.llm_schemas import LLMAnalysisRequest, LLMIndicatorSelectionRequest
-from app.services.backtester import run_benchmark, run_strategy
+from app.models.llm_schemas import ComboIndicatorConfig, LLMAnalysisRequest, LLMIndicatorSelectionRequest, SelectedIndicatorConfig
+from app.services.backtester import run_benchmark, run_strategy, run_strategy_from_signals
+from app.services.strategies import compute_signals
 from app.services.data_loader import load_and_prepare_timeseries
 from app.services.indicators_engine import compute_indicator
 from app.services.llm_client import LLMClient
@@ -125,6 +126,78 @@ def _run_backtest_for_config(
     return result
 
 
+def _run_backtest_for_combo(
+    prepared: PreparedData,
+    registry: IndicatorRegistry,
+    combo_cfg: ComboIndicatorConfig,
+    risk_settings: RiskSettings,
+) -> BacktestResult | None:
+    """Compute signals for each component, combine with AND/MAJORITY logic, run backtest."""
+    component_signals: list[pd.Series] = []
+    names: list[str] = []
+
+    for component in combo_cfg.indicators:
+        meta = registry.get(component.indicator_name)
+        if meta is None:
+            logger.warning("Combo: unknown indicator %s — skipping combo", component.indicator_name)
+            return None
+        indicator_data = compute_indicator(prepared.df, meta, component.params)
+        if indicator_data is None:
+            logger.warning("Combo: indicator computation failed for %s — skipping combo", component.indicator_name)
+            return None
+        try:
+            sigs = compute_signals(
+                component.indicator_name,
+                component.strategy_template,
+                prepared.df,
+                indicator_data,
+                component.params,
+            )
+        except Exception as exc:
+            logger.warning("Combo: signal computation failed for %s: %s — skipping combo", component.indicator_name, exc)
+            return None
+        component_signals.append(sigs)
+        names.append(component.indicator_name)
+
+    if len(component_signals) < 2:
+        logger.warning("Combo: fewer than 2 valid components — skipping")
+        return None
+
+    n = len(component_signals)
+    combo_logic = combo_cfg.combo_logic
+    combined = pd.Series(0, index=prepared.df.index)
+
+    for i in range(len(prepared.df)):
+        buy_votes = sum(1 for s in component_signals if i < len(s) and int(s.iloc[i]) == 1)
+        sell_votes = sum(1 for s in component_signals if i < len(s) and int(s.iloc[i]) == -1)
+        if combo_logic == "AND":
+            if buy_votes == n:
+                combined.iloc[i] = 1
+            elif sell_votes == n:
+                combined.iloc[i] = -1
+        else:  # MAJORITY
+            threshold = (n // 2) + 1
+            if buy_votes >= threshold:
+                combined.iloc[i] = 1
+            elif sell_votes >= threshold:
+                combined.iloc[i] = -1
+
+    combo_name = "+".join(names)
+    strategy_template = f"combo_{combo_logic.lower()}"
+    merged_params = {}
+    for component in combo_cfg.indicators:
+        merged_params[component.indicator_name] = component.params
+
+    return run_strategy_from_signals(
+        data=prepared,
+        signals=combined,
+        indicator_name=combo_name,
+        strategy_template=strategy_template,
+        params=merged_params,
+        risk_settings=risk_settings,
+    )
+
+
 def run_full_analysis(
     file_bytes: bytes,
     stock_symbol: str,
@@ -237,7 +310,23 @@ def run_full_analysis(
         result.metrics = compute_metrics(result, timeframe, risk_free_rate_annual)
         base_results.append(result)
 
-    logger.info("Completed %d backtests (%d skipped)", len(base_results), sum(1 for r in base_results if r.skipped))
+    logger.info("Completed %d single-indicator backtests (%d skipped)", len(base_results), sum(1 for r in base_results if r.skipped))
+
+    # ── Step 3b: Run combo backtests ──────────────────────────────────────
+    for combo_cfg in selection_response.combo_configs_to_test:
+        combo_name = "+".join(c.indicator_name for c in combo_cfg.indicators)
+        logger.info("Backtesting combo: %s (%s)", combo_name, combo_cfg.combo_logic)
+        result = _run_backtest_for_combo(
+            prepared=prepared,
+            registry=registry,
+            combo_cfg=combo_cfg,
+            risk_settings=risk_settings,
+        )
+        if result is None:
+            continue
+        result.metrics = compute_metrics(result, timeframe, risk_free_rate_annual)
+        base_results.append(result)
+    logger.info("Total results after combos: %d", len(base_results))
 
     # ── Step 4: LLM #2 – analyze results ─────────────────────────────────
     valid_results = [r for r in base_results if not r.skipped]
@@ -272,15 +361,67 @@ def run_full_analysis(
     modified_results: list[BacktestResult] = []
     for mod in llm_analysis.suggested_modifications:
         logger.info("Backtesting modification: %s / %s", mod.base_indicator_name, mod.base_strategy_template)
-        merged_params = {**mod.new_params, **mod.risk_controls}
-        result = _run_backtest_for_config(
-            prepared=prepared,
-            registry=registry,
-            indicator_name=mod.base_indicator_name,
-            strategy_template=mod.base_strategy_template,
-            params=merged_params,
-            risk_settings=risk_settings,
-        )
+        result = None
+
+        if mod.new_combo_components is not None:
+            # Combo modification: LLM supplied a full updated component list
+            try:
+                updated_components = [SelectedIndicatorConfig(**c) for c in mod.new_combo_components]
+            except Exception as exc:
+                logger.warning("Invalid combo modification components: %s", exc)
+                continue
+            combo_cfg = ComboIndicatorConfig(
+                indicators=updated_components,
+                combo_logic=mod.new_combo_logic or "AND",
+                rationale=mod.expected_effect,
+            )
+            result = _run_backtest_for_combo(
+                prepared=prepared,
+                registry=registry,
+                combo_cfg=combo_cfg,
+                risk_settings=risk_settings,
+            )
+        elif "+" in mod.base_indicator_name and mod.new_combo_logic is not None:
+            # Logic-only change: find original combo in base_results and re-run with new logic
+            original = next(
+                (r for r in base_results if r.indicator_name == mod.base_indicator_name and not r.skipped),
+                None,
+            )
+            if original is not None:
+                # Reconstruct ComboIndicatorConfig from stored params
+                component_names = mod.base_indicator_name.split("+")
+                components = [
+                    SelectedIndicatorConfig(
+                        indicator_name=name,
+                        params=original.params.get(name, {}),
+                        strategy_template=mod.base_strategy_template.replace("combo_and", "").replace("combo_majority", "").strip("_") or "zero_cross",
+                        rationale="",
+                    )
+                    for name in component_names
+                ]
+                combo_cfg = ComboIndicatorConfig(
+                    indicators=components,
+                    combo_logic=mod.new_combo_logic,
+                    rationale=mod.expected_effect,
+                )
+                result = _run_backtest_for_combo(
+                    prepared=prepared,
+                    registry=registry,
+                    combo_cfg=combo_cfg,
+                    risk_settings=risk_settings,
+                )
+        else:
+            # Standard single-indicator modification
+            merged_params = {**mod.new_params, **mod.risk_controls}
+            result = _run_backtest_for_config(
+                prepared=prepared,
+                registry=registry,
+                indicator_name=mod.base_indicator_name,
+                strategy_template=mod.base_strategy_template,
+                params=merged_params,
+                risk_settings=risk_settings,
+            )
+
         if result is None:
             continue
         result.metrics = compute_metrics(result, timeframe, risk_free_rate_annual)

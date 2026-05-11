@@ -32,10 +32,18 @@ class SelectedIndicatorConfig(BaseModel):
     params: dict
     strategy_template: str
     rationale: str
+    confidence: int = 3  # 1–5; configs with < 3 are dropped before backtesting
+
+
+class ComboIndicatorConfig(BaseModel):
+    indicators: list[SelectedIndicatorConfig]  # 2–3 components
+    combo_logic: Literal["AND", "MAJORITY"] = "AND"
+    rationale: str
 
 
 class IndicatorSelectionResponse(BaseModel):
     indicators_to_test: list[SelectedIndicatorConfig]
+    combo_configs_to_test: list[ComboIndicatorConfig] = []
 
 
 # ── LLM Call #2 ────────────────────────────────────────────────────────────
@@ -79,6 +87,9 @@ class SuggestedModification(BaseModel):
     expected_effect: str
     expected_sharpe_range: list[float] | None = None  # [low, high] e.g. [0.8, 1.2]
     targets: str | None = None  # "drawdown" | "sharpe" | "win_rate" | "frequency"
+    # Combo-strategy modification fields (used when base_indicator_name contains "+")
+    new_combo_components: list[dict] | None = None  # Full updated component list
+    new_combo_logic: Literal["AND", "MAJORITY"] | None = None  # Optionally change logic
 
 
 class LLMAnalysisResponse(BaseModel):

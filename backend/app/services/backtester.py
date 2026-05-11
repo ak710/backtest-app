@@ -6,43 +6,24 @@ import numpy as np
 from app.models.data_models import BacktestResult, EquityPoint, PreparedData, RiskSettings, Trade
 from app.models.indicators import IndicatorMeta
 from app.services.indicators_engine import compute_indicator
-from app.services.strategies import compute_signals
+from app.services.strategies import compute_signals  # also used directly in pipeline via import
 from app.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
-def run_strategy(
+def run_strategy_from_signals(
     data: PreparedData,
-    meta: IndicatorMeta,
-    indicator_data: pd.Series | pd.DataFrame,
-    params: dict,
+    signals: pd.Series,
+    indicator_name: str,
     strategy_template: str,
+    params: dict,
     risk_settings: RiskSettings,
 ) -> BacktestResult:
-    """Run a single strategy backtest on prepared data."""
+    """Run a backtest from a pre-computed signal series."""
     df = data.df
     close = df["close"]
 
-    # Compute entry/exit signals
-    try:
-        signals = compute_signals(
-            meta.name, strategy_template, df, indicator_data, params
-        )
-    except Exception as exc:
-        logger.warning("Signal computation failed for %s/%s: %s", meta.name, strategy_template, exc)
-        return BacktestResult(
-            indicator_name=meta.name,
-            strategy_template=strategy_template,
-            params=params,
-            trades=[],
-            equity_curve=[],
-            period_returns=[],
-            skipped=True,
-            skip_reason=str(exc),
-        )
-
-    # ── Bar-by-bar simulation ───────────────────────────────────────────────
     initial_capital = risk_settings.initial_capital
     commission_rate = risk_settings.commission
     slippage_rate = risk_settings.slippage
@@ -108,7 +89,6 @@ def run_strategy(
         if i > 0 and prev_equity > 0:
             r = (current_equity - prev_equity) / prev_equity
             period_returns.append(r)
-            # Track returns only for bars where we held or just entered/exited a position
             if was_in_position or in_position:
                 in_market_returns.append(r)
         prev_equity = current_equity
@@ -133,7 +113,7 @@ def run_strategy(
         )
 
     return BacktestResult(
-        indicator_name=meta.name,
+        indicator_name=indicator_name,
         strategy_template=strategy_template,
         params=params,
         trades=trades,
@@ -141,6 +121,35 @@ def run_strategy(
         period_returns=period_returns,
         in_market_returns=in_market_returns,
     )
+
+
+def run_strategy(
+    data: PreparedData,
+    meta: IndicatorMeta,
+    indicator_data: pd.Series | pd.DataFrame,
+    params: dict,
+    strategy_template: str,
+    risk_settings: RiskSettings,
+) -> BacktestResult:
+    """Run a single strategy backtest on prepared data."""
+    df = data.df
+    try:
+        signals = compute_signals(
+            meta.name, strategy_template, df, indicator_data, params
+        )
+    except Exception as exc:
+        logger.warning("Signal computation failed for %s/%s: %s", meta.name, strategy_template, exc)
+        return BacktestResult(
+            indicator_name=meta.name,
+            strategy_template=strategy_template,
+            params=params,
+            trades=[],
+            equity_curve=[],
+            period_returns=[],
+            skipped=True,
+            skip_reason=str(exc),
+        )
+    return run_strategy_from_signals(data, signals, meta.name, strategy_template, params, risk_settings)
 
 
 def run_benchmark(data: PreparedData, risk_settings: RiskSettings) -> BacktestResult:
