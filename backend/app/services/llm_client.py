@@ -24,11 +24,14 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 SELECTION_SYSTEM_PROMPT = """You are a quantitative trading research assistant specializing in technical analysis for weekly and monthly bar data.
 Your goal is to select promising indicator configurations for backtesting on a single stock.
-Focus on robust, low-drawdown strategies. Prefer indicators with a strong theoretical basis.
+Focus on robust, low-drawdown strategies that can beat the buy-and-hold benchmark. Prefer indicators with a strong theoretical basis.
+Prioritize configurations likely to achieve Sharpe ratio > 1.0 and max drawdown < 25%.
 You MUST respond with valid JSON only — no prose, no markdown, no explanation outside the JSON."""
 
 ANALYSIS_SYSTEM_PROMPT = """You are a quantitative portfolio analyst specializing in strategy optimization.
-Your goal is to analyze backtest results and provide actionable insights to improve Sharpe ratio and reduce volatility.
+Your goal is to analyze backtest results and provide actionable parameter modifications to beat the buy-and-hold benchmark.
+A strategy that beats buy-and-hold by 0.3 Sharpe is valuable even if its absolute Sharpe is modest.
+Your modifications must be mechanistically grounded — explain WHY the parameter change produces the improvement, not just what changes.
 You MUST respond with valid JSON only — no prose, no markdown, no explanation outside the JSON."""
 
 
@@ -99,26 +102,60 @@ class LLMClient:
             if lines:
                 fundamental_block = "\nFundamental context (Roic.ai):\n" + "\n".join(lines) + "\n"
 
+        benchmark_block = ""
+        if req.benchmark:
+            bm = req.benchmark
+            benchmark_block = f"""
+Buy-and-hold benchmark (what you must beat):
+  Sharpe ratio: {bm.get('sharpe', 0):.3f}
+  CAGR: {bm.get('cagr', 0):.1%}
+  Max drawdown: {bm.get('max_drawdown', 0):.1%}
+  Total return: {bm.get('total_return', 0):.1%}
+  Period: {bm.get('years', 0):.1f} years
+
+TARGET: Only suggest configurations you believe can achieve Sharpe > {bm.get('sharpe', 0):.2f} (the buy-and-hold Sharpe). Configurations that cannot plausibly beat this should not be included.
+"""
+
+        regime_block = ""
+        if req.price_regime:
+            pr = req.price_regime
+            regime_block = f"""
+Price regime signals:
+  Return autocorrelation (lag-1): {pr.get('autocorr_lag1', 0):.3f}  (positive = momentum tendency, negative = mean-reversion tendency)
+  Trend slope (annualized): {pr.get('trend_slope_annualized', 0):.2%}  (positive = uptrend, negative = downtrend)
+  Volatility regime: {pr.get('vol_regime', 'normal')}  (recent vol vs historical)
+  Recent annualized vol: {pr.get('recent_vol_annualized', 0):.1%}
+  Full-period annualized vol: {pr.get('full_period_vol_annualized', 0):.1%}
+  Regime hint: {pr.get('regime_hint', 'mixed')}
+
+IMPORTANT: Let the regime hint guide your indicator class selection:
+  - If regime_hint = "momentum" → heavily favor trend-following and momentum indicators (MA crossovers, MACD, ADX, ROC). Mean-reversion indicators are unlikely to work here.
+  - If regime_hint = "mean-reversion" → heavily favor oscillator-based indicators (RSI, Stochastic, Bollinger Bands, CCI). Trend-following will generate whipsaws.
+  - If regime_hint = "mixed" → balance both but lean toward indicators with adaptive behavior.
+  - In a high-volatility regime → prefer wider bands/longer lookbacks to reduce noise; avoid tight stop-losses.
+  - In a low-volatility regime → shorter lookbacks and tighter entry thresholds can be more responsive.
+"""
+
         user_prompt = f"""Stock: {req.stock_symbol}
 Timeframe: {req.timeframe} bars
 Period: {req.sample_start} to {req.sample_end} ({req.num_bars} bars)
 
 Basic price statistics:
 {json.dumps(req.basic_stats, indent=2)}
-{fundamental_block}
+{benchmark_block}{regime_block}{fundamental_block}
 Objective: {req.objective}
 
 Available indicators:
 {catalog_json}
 
 Instructions:
-- Select exactly 10-15 indicator configurations.
+- Select 8-12 indicator configurations. Fewer high-quality picks beat 15 mediocre ones.
+- Each pick must be grounded in the regime signals above — your rationale must reference the autocorrelation or trend slope when relevant.
 - For each, pick parameters within the specified param_ranges.
 - Assign a strategy_template from the indicator's compatible_strategies list.
-- Provide a brief rationale that references the fundamental context where relevant.
-- Use the fundamental context to bias your choices: high ROIC + strong revenue growth → favour trend/momentum indicators; low margins + cyclical profile → favour mean-reversion and volatility indicators.
-- Ensure diversity: include trend, momentum, volatility, and volume indicators.
+- Use the fundamental context to bias your choices: high ROIC + strong revenue growth → favour trend/momentum; low margins + cyclical profile → favour mean-reversion and volatility indicators.
 - For indicators with fast/slow lengths, ensure fast < slow.
+- Do NOT include an indicator class that directly contradicts the regime hint (e.g. do not include pure trend-following in a mean-reversion regime unless you have a strong fundamental reason).
 
 Respond with ONLY this JSON:
 {{
@@ -127,7 +164,7 @@ Respond with ONLY this JSON:
       "indicator_name": "<name>",
       "params": {{}},
       "strategy_template": "<template>",
-      "rationale": "<why>"
+      "rationale": "<why this configuration can beat the buy-and-hold Sharpe, referencing regime signals>"
     }}
   ]
 }}"""
@@ -189,20 +226,37 @@ Respond with ONLY this JSON:
             if req.num_bars < (36 if req.timeframe == "monthly" else 156)
             else ""
         )
+        analysis_benchmark_block = ""
+        if req.benchmark:
+            bm = req.benchmark
+            analysis_benchmark_block = f"""Buy-and-hold benchmark:
+  Sharpe: {bm.get('sharpe', 0):.3f}
+  CAGR: {bm.get('cagr', 0):.1%}
+  Max drawdown: {bm.get('max_drawdown', 0):.1%}
+  Total return: {bm.get('total_return', 0):.1%}
+
+Strategies with beats_benchmark=true already outperform passive investing. Focus modifications on these winners — do NOT try to rescue strategies that badly underperform the benchmark.
+
+"""
         user_prompt = f"""Stock: {req.stock_symbol}
 Timeframe: {req.timeframe} bars
 Risk-free rate (annual): {req.risk_free_rate_annual:.2%}
 {short_data_note}
 
-Backtest results:
+{analysis_benchmark_block}Backtest results (beats_benchmark=true means Sharpe > buy-and-hold Sharpe of {f"{req.benchmark.get('sharpe', 0):.3f}" if req.benchmark else "?"}):
 {summaries_json}
 
 Additional notes: {req.notes or "None"}
 
 Instructions:
-1. Rank strategies by ROBUSTNESS (not just Sharpe). Consider drawdown, num_trades, win_rate.
-2. Explain which indicators worked best and the likely reason.
-3. Suggest AT LEAST 3 specific parameter modifications (more is better). Each modification must change meaningful parameters — not trivial tweaks. Include at least one that targets drawdown reduction and one that targets Sharpe improvement.
+1. Rank strategies by ROBUSTNESS (not just Sharpe). Prioritize strategies where beats_benchmark=true. Consider drawdown, num_trades, win_rate.
+2. Explain which indicators worked best and WHY — reference the specific market condition or price pattern that the indicator exploits.
+3. Suggest AT LEAST 4 specific parameter modifications. Rules for modifications:
+   a. ONLY modify strategies that already beat the benchmark or are very close (Sharpe within 0.2 of benchmark). Do not try to salvage badly underperforming strategies.
+   b. Each modification must change the strategy's behavior MEANINGFULLY — not trivial ±1 tweaks. The change must have a clear mechanism (e.g. "widening the Bollinger Band from 2.0 to 2.5 std reduces false breakout signals in high-vol regimes").
+   c. Provide an expected_sharpe_range as [low_estimate, high_estimate] — be realistic, not optimistic.
+   d. Label each modification with a targets field: one of "drawdown", "sharpe", "win_rate", or "frequency".
+   e. Include at least 2 modifications targeting Sharpe improvement and at least 1 targeting drawdown reduction.
 4. Include warnings about data limitations.
 
 Respond with ONLY this JSON:
@@ -213,7 +267,7 @@ Respond with ONLY this JSON:
       "indicator_name": "<name>",
       "strategy_template": "<template>",
       "params": {{}},
-      "reason": "<why this is top>"
+      "reason": "<why this is top, referencing beats_benchmark status and specific metrics>"
     }}
   ],
   "suggested_modifications": [
@@ -222,7 +276,9 @@ Respond with ONLY this JSON:
       "base_strategy_template": "<template>",
       "new_params": {{}},
       "risk_controls": {{}},
-      "expected_effect": "<what this should improve>"
+      "expected_effect": "<mechanism: WHY this parameter change improves performance>",
+      "expected_sharpe_range": [<low_float>, <high_float>],
+      "targets": "<drawdown|sharpe|win_rate|frequency>"
     }}
   ],
   "warnings": ["<warning1>"]

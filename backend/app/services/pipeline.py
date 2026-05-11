@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import BinaryIO, Literal
 
+import numpy as np
 import pandas as pd
 
 from app.config import settings
@@ -22,6 +23,44 @@ logger = get_logger(__name__)
 # Minimum bars required for IS and OOS slices
 _MIN_IS_BARS = {"monthly": 24, "weekly": 96}
 _MIN_OOS_BARS = {"monthly": 12, "weekly": 48}
+
+
+def _compute_price_regime(df: pd.DataFrame, timeframe: str) -> dict:
+    """Compute statistical signals about the price regime to guide indicator selection."""
+    returns = df["close"].pct_change().dropna()
+    periods_per_year = 52 if timeframe == "weekly" else 12
+
+    autocorr = float(returns.autocorr(lag=1)) if len(returns) > 2 else 0.0
+
+    log_prices = np.log(df["close"].values)
+    x = np.arange(len(log_prices), dtype=float)
+    slope = float(np.polyfit(x, log_prices, 1)[0])
+    trend_slope_annualized = round(slope * periods_per_year, 4)
+
+    full_vol = float(returns.std())
+    recent_vol = float(returns.iloc[-20:].std()) if len(returns) >= 20 else full_vol
+    if recent_vol > full_vol * 1.2:
+        vol_regime = "high"
+    elif recent_vol < full_vol * 0.8:
+        vol_regime = "low"
+    else:
+        vol_regime = "normal"
+
+    if autocorr > 0.1:
+        regime_hint = "momentum"
+    elif autocorr < -0.1:
+        regime_hint = "mean-reversion"
+    else:
+        regime_hint = "mixed"
+
+    return {
+        "autocorr_lag1": round(autocorr, 3),
+        "trend_slope_annualized": trend_slope_annualized,
+        "vol_regime": vol_regime,
+        "recent_vol_annualized": round(recent_vol * (periods_per_year ** 0.5), 4),
+        "full_period_vol_annualized": round(full_vol * (periods_per_year ** 0.5), 4),
+        "regime_hint": regime_hint,
+    }
 
 
 def _slice_prepared_data(prepared: PreparedData, df_slice: pd.DataFrame) -> PreparedData:
@@ -148,6 +187,21 @@ def run_full_analysis(
     else:
         logger.info("No fundamental context — proceeding without it")
 
+    # Compute buy-and-hold benchmark and price regime before LLM #1 so they can anchor suggestions
+    logger.info("Computing buy-and-hold benchmark...")
+    benchmark = run_benchmark(prepared, risk_settings)
+    benchmark.metrics = compute_metrics(benchmark, timeframe, risk_free_rate_annual, risk_settings.initial_capital)
+    benchmark_dict = {
+        "sharpe": benchmark.metrics.get("sharpe", 0.0),
+        "cagr": benchmark.metrics.get("cagr", 0.0),
+        "max_drawdown": benchmark.metrics.get("max_drawdown", 0.0),
+        "total_return": benchmark.metrics.get("total_return", 0.0),
+        "years": prepared.basic_stats.get("years_covered", 0.0),
+    }
+
+    price_regime = _compute_price_regime(prepared.df, timeframe)
+    logger.info("Price regime: %s", price_regime)
+
     selection_request = LLMIndicatorSelectionRequest(
         stock_symbol=stock_symbol,
         timeframe=timeframe,
@@ -157,6 +211,8 @@ def run_full_analysis(
         basic_stats=prepared.basic_stats,
         indicator_catalog=registry.to_summaries(),
         fundamental_context=fundamental_context,
+        benchmark=benchmark_dict,
+        price_regime=price_regime,
     )
 
     logger.info("Calling LLM #1 to select indicators...")
@@ -187,6 +243,10 @@ def run_full_analysis(
     valid_results = [r for r in base_results if not r.skipped]
     summaries = [to_strategy_summary(r) for r in valid_results]
 
+    bh_sharpe = benchmark_dict["sharpe"]
+    for s in summaries:
+        s.beats_benchmark = s.sharpe > bh_sharpe
+
     short_data_warning = ""
     min_bars = 36 if timeframe == "monthly" else 156
     if prepared.num_bars < min_bars:
@@ -201,6 +261,7 @@ def run_full_analysis(
         risk_free_rate_annual=risk_free_rate_annual,
         num_bars=prepared.num_bars,
         strategies=summaries,
+        benchmark=benchmark_dict,
         notes=short_data_warning,
     )
 
@@ -246,12 +307,7 @@ def run_full_analysis(
             oos_results.append(result)
         logger.info("OOS validation complete: %d results", len(oos_results))
 
-    # ── Step 7: Compute buy-and-hold benchmark (on IS/full data) ─────────
-    logger.info("Computing buy-and-hold benchmark...")
-    benchmark = run_benchmark(prepared, risk_settings)
-    benchmark.metrics = compute_metrics(benchmark, timeframe, risk_free_rate_annual, risk_settings.initial_capital)
-
-    # ── Step 8: Generate report ───────────────────────────────────────────
+    # ── Step 7: Generate report ───────────────────────────────────────────
     logger.info("Generating report...")
     report = generate_report(
         prepared=prepared,

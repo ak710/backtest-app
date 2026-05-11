@@ -19,9 +19,11 @@ class LLMIndicatorSelectionRequest(BaseModel):
     basic_stats: dict
     indicator_catalog: list[IndicatorMetaSummary]
     fundamental_context: dict | None = None
+    benchmark: dict | None = None  # buy-and-hold metrics: sharpe, cagr, max_drawdown, total_return
+    price_regime: dict | None = None  # autocorr_lag1, trend_slope_annualized, vol_regime
     objective: str = (
-        "Select 10-15 promising indicator configurations for backtesting. "
-        "Focus on robust, low-drawdown strategies with good Sharpe ratio potential."
+        "Select 8-12 promising indicator configurations for backtesting. "
+        "Focus on robust, low-drawdown strategies that can beat the buy-and-hold benchmark."
     )
 
 
@@ -49,6 +51,7 @@ class StrategySummary(BaseModel):
     num_trades: int
     win_rate: float
     total_return: float
+    beats_benchmark: bool = False  # True if this strategy's Sharpe > buy-and-hold Sharpe
 
 
 class LLMAnalysisRequest(BaseModel):
@@ -57,6 +60,7 @@ class LLMAnalysisRequest(BaseModel):
     risk_free_rate_annual: float
     num_bars: int
     strategies: list[StrategySummary]
+    benchmark: dict | None = None  # buy-and-hold metrics: sharpe, cagr, max_drawdown, total_return
     notes: str = ""
 
 
@@ -73,6 +77,8 @@ class SuggestedModification(BaseModel):
     new_params: dict
     risk_controls: dict = {}
     expected_effect: str
+    expected_sharpe_range: list[float] | None = None  # [low, high] e.g. [0.8, 1.2]
+    targets: str | None = None  # "drawdown" | "sharpe" | "win_rate" | "frequency"
 
 
 class LLMAnalysisResponse(BaseModel):
